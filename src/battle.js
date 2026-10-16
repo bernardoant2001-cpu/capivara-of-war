@@ -20,7 +20,7 @@ function makeSide(dir, mult) {
 export function newGame(diff = 1, ai = true) {
   return {
     sides: [makeSide(1, 1), makeSide(-1, DIFFICULTIES[diff].income)],
-    shots: [], drops: [], winner: -1, time: 0, diff, ai, aiT: 2,
+    shots: [], drops: [], dying: [], fx: [], winner: -1, time: 0, diff, ai, aiT: 2,
   };
 }
 
@@ -67,6 +67,7 @@ export function evolve(g, s, force = false) {
   const side = g.sides[s];
   if (g.winner >= 0 || side.era >= ERAS.length - 1 || (!force && !canEvolve(side))) return false;
   side.era++;
+  g.fx.push('evolve');
   const b = side.base, hp = ERAS[side.era].baseHp;
   b.hp += hp - b.maxHp;
   b.maxHp = hp;
@@ -78,6 +79,7 @@ export function special(g, s) {
   const side = g.sides[s], sp = ERAS[side.era].special, foes = g.sides[1 - s].units;
   if (g.winner >= 0 || side.specialT > 0) return false;
   side.specialT = SPECIAL_CD;
+  g.fx.push('special');
   const lo = WORLD * 0.2, hi = WORLD - BASE_W;
   for (let i = 0; i < sp.count; i++) {
     const r = lo + Math.random() * (hi - lo);
@@ -121,6 +123,7 @@ function front(side) {
 
 function fire(g, s, x, y0, t, dmg, splash) {
   g.shots.push({ s, x, x0: x, y0, t, dmg, splash, done: false });
+  g.fx.push('shoot');
 }
 
 function hurt(g, s, t, dmg) {
@@ -133,9 +136,11 @@ function hurt(g, s, t, dmg) {
       me.gold += t.def.cost * KILL_GOLD * me.mult;
       me.xp += t.def.cost * KILL_XP;
       me.kills++;
-    }
+      g.fx.push('die');
+    } else g.fx.push('hit');
   } else {
     me.xp += dmg * BASE_XP;
+    g.fx.push('hit');
     if (t.hp <= 0) g.winner = s;
   }
 }
@@ -143,6 +148,7 @@ function hurt(g, s, t, dmg) {
 // Acerto normal ou em área (área só pega unidade; se o alvo for a base, bate nela).
 function strike(g, s, t, dmg, splash) {
   if (!splash || !t.def) return hurt(g, s, t, dmg);
+  g.fx.push('boom');
   const x = t.x, us = g.sides[1 - s].units;
   for (let j = 0; j < us.length; j++) if (Math.abs(us[j].x - x) <= splash) hurt(g, s, us[j], dmg);
 }
@@ -155,6 +161,8 @@ function compact(a, keep) {
 }
 const alive = (o) => o.hp > 0;
 const pending = (o) => !o.done;
+export const DYING_TIME = 1.8;
+const asleep = (o) => o.deadT < DYING_TIME;
 
 function ai(g, dt) {
   const me = g.sides[1], foe = g.sides[0], diff = DIFFICULTIES[g.diff];
@@ -191,6 +199,7 @@ function ai(g, dt) {
 export function update(g, dt) {
   if (g.winner >= 0) return;
   g.time += dt;
+  if (g.fx.length > 200) g.fx.length = 0; // ninguém tocando os sons (ex.: nos testes)
   if (g.ai) ai(g, dt);
 
   for (let s = 0; s < 2; s++) {
@@ -270,6 +279,13 @@ export function update(g, dt) {
 
   compact(g.shots, pending);
   compact(g.drops, pending);
+  // quem caiu fica um pouquinho deitado dormindo antes de sumir (só visual)
+  for (let s = 0; s < 2; s++) {
+    const us = g.sides[s].units;
+    for (let i = 0; i < us.length; i++) if (us[i].hp <= 0) { us[i].s = s; us[i].deadT = 0; g.dying.push(us[i]); }
+  }
+  for (let i = 0; i < g.dying.length; i++) g.dying[i].deadT += dt;
+  compact(g.dying, asleep);
   compact(g.sides[0].units, alive);
   compact(g.sides[1].units, alive);
 }

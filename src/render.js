@@ -1,15 +1,52 @@
 import {
-  W, H, WORLD, GROUND, HUD_H, BASE_H, QUEUE_MAX, ERAS, XP_TO_EVOLVE, DROP_FALL, DIFFICULTIES,
+  W, H, RES, WORLD, GROUND, HUD_H, QUEUE_MAX, ERAS, XP_TO_EVOLVE, DROP_FALL, DIFFICULTIES,
   MAX_SLOTS, SLOT_COSTS, TURRET_W, TURRET_H, slotY,
 } from './data.js';
-import { ATTACK, WALK, canEvolve } from './battle.js';
+import { ATTACK, WALK, canEvolve, DYING_TIME } from './battle.js';
 
-// Cores por lado e por tipo (no M2 vira sprite com troca de paleta).
+// Sprites: um atlas por era (por enquanto só a era 1) + versão branca pro piscar de dano.
+const atlas = new Image(), bg = new Image();
+atlas.src = 'assets/era1.png';
+bg.src = 'assets/bg1.webp';
+let FRAMES = {}, white = null;
+export const ready = Promise.all([
+  fetch('assets/era1.json').then((r) => r.json()).then((f) => { FRAMES = f; }),
+  atlas.decode(),
+  bg.decode(),
+]).then(() => {
+  white = document.createElement('canvas');
+  white.width = atlas.width; white.height = atlas.height;
+  const w = white.getContext('2d');
+  w.drawImage(atlas, 0, 0);
+  w.globalCompositeOperation = 'source-in';
+  w.fillStyle = '#fff'; w.fillRect(0, 0, white.width, white.height);
+});
+
+// Desenha o quadro com o pé em (cx, by); o x de referência (âncora) do quadro fica em cx. Retorna a altura, ou 0 se não existe.
+function draw1(ctx, f, cx, by, flash) {
+  if (!f) return 0;
+  const w = f[2] / RES, h = f[3] / RES;
+  const x = Math.round((cx - f[4] / RES) * RES) / RES, y = Math.round((by - h) * RES) / RES;
+  ctx.drawImage(flash ? white : atlas, f[0], f[1], f[2], f[3], x, y, w, h);
+  return h;
+}
+const sprite = (ctx, name, s, cx, by, flash = false) => draw1(ctx, name && FRAMES[s ? name + '_inimigo' : name], cx, by, flash);
+
+// quadro de animação de um personagem (cache dos nomes pra não montar string todo frame)
+const keys = {};
+function frame(name, s, anim, i) {
+  const k = keys[name] ||= [{}, {}];
+  const a = k[s][anim] ||= [0, 1, 2, 3].map((n) => FRAMES[`${name}${s ? '_inimigo' : ''}_${anim}_${n}`]);
+  return a[i];
+}
+
+const STRIDE = 4; // px andados por quadro do andar (o passo acompanha o chão, sem patinar)
+
+// Cores dos quadrados das eras que ainda não têm arte.
 const COLORS = [
   ['#e08a3c', '#f2c14e', '#c4652d', '#ff5a1a'], // Clã do Rio
   ['#4c7bd9', '#7fb2f0', '#4a4fae', '#8a4cff'], // Clã do Pântano
 ];
-const BASE_COLORS = ['#8a4a2a', '#2f3580'];
 const TURRET_COLORS = ['#a89a7c', '#c9a14a', '#77706a'];
 const ERA_COLORS = ['#5a3d1e', '#b8bec8', '#2f6e3a', '#6b7a2f', '#3ff0ff']; // faixa na cabeça
 
@@ -23,17 +60,10 @@ export const EVOLVE_BTN = { x: 520, y: 6, w: 60, h: 28 };
 export const TOGGLE_BTN = { x: 584, y: 6, w: 52, h: 28 };
 export const MENU_BTNS = DIFFICULTIES.map((_, i) => ({ x: W / 2 - 80, y: 130 + i * 36, w: 160, h: 28 }));
 
-// Fundo pré-renderizado uma vez; por frame é só 1 drawImage.
-const bg = document.createElement('canvas');
-bg.width = WORLD; bg.height = H;
-{
-  const b = bg.getContext('2d');
-  b.fillStyle = '#7ec8e3'; b.fillRect(0, 0, WORLD, H);
-  b.fillStyle = '#5a9a5a';
-  for (let x = 0; x < WORLD; x += 4) b.fillRect(x, GROUND - 40 - Math.round(20 * Math.sin(x / 90) + 10 * Math.sin(x / 37)), 4, 80);
-  b.fillStyle = '#6b4f2a'; b.fillRect(0, GROUND, WORLD, H - GROUND);
-  b.fillStyle = '#8a6a3a';
-  for (let x = 0; x < WORLD; x += 16) b.fillRect(x + ((x * 7) % 11), GROUND + 4 + ((x * 13) % 40), 3, 2);
+// fundo: a imagem cobre o campo inteiro (WORLD), por frame é só 1 drawImage
+function drawBg(ctx, cam) {
+  const k = bg.width / WORLD;
+  ctx.drawImage(bg, cam * k, 0, W * k, bg.height, 0, 0, W, H);
 }
 
 const hpBar = (ctx, x, y, w, frac, color) => {
@@ -43,8 +73,9 @@ const hpBar = (ctx, x, y, w, frac, color) => {
 };
 
 export function draw(ctx, g, ui) {
+  ctx.setTransform(RES, 0, 0, RES, 0, 0);
   const cam = Math.round(ui.cam);
-  ctx.drawImage(bg, cam, 0, W, H, 0, 0, W, H);
+  drawBg(ctx, cam);
 
   for (let s = 0; s < 2; s++) drawBase(ctx, g, s, cam, ui);
 
@@ -58,68 +89,112 @@ export function draw(ctx, g, ui) {
 
   // desenha por profundidade: quem tá mais "pra frente" no chão fica por cima
   for (let z = 0; z < 9; z++) {
+    for (const u of g.dying) if (u.z === z) drawSleeping(ctx, u, cam);
     for (let s = 0; s < 2; s++) {
-      const d = g.sides[s].dir;
-      for (const u of g.sides[s].units) {
-        if (u.z !== z) continue;
-        const def = u.def;
-        const lunge = u.state === ATTACK && u.cd > def.cd - 0.12 ? 3 * d : 0;
-        const bob = u.state === WALK ? Math.round(Math.sin(g.time * 12 + u.x) * 0.8) : 0;
-        const x = Math.round(u.x - def.w / 2) - cam + lunge, y = GROUND - def.h + bob + z;
-        ctx.fillStyle = u.hitT > 0 ? '#fff' : COLORS[s][def.type];
-        ctx.fillRect(x, y, def.w, def.h);
-        ctx.fillStyle = ERA_COLORS[def.era];
-        ctx.fillRect(x, y, def.w, 3);
-        ctx.fillStyle = '#222'; // olhinho pra mostrar pra onde olha
-        ctx.fillRect(d > 0 ? x + def.w - 5 : x + 3, y + 5, 2, 2);
-        if (u.hp < def.hp) hpBar(ctx, x, y - 5, def.w, u.hp / def.hp);
-      }
+      for (const u of g.sides[s].units) if (u.z === z) drawUnit(ctx, g, u, s, cam);
     }
   }
 
-  ctx.fillStyle = '#222';
   for (const p of g.shots) {
     const total = Math.abs(p.t.x - p.x0) || 1;
     const k = Math.min(1, Math.abs(p.x - p.x0) / total);
     const y = p.y0 + (GROUND - 12 - p.y0) * k - Math.sin(k * Math.PI) * 18;
-    const r = p.splash ? 5 : 3;
-    ctx.fillRect(Math.round(p.x) - cam - (r >> 1), Math.round(y), r, r);
+    ball(ctx, p.x - cam, y, p.splash ? 2.5 : 1.5, p.splash ? '#6b3f1f' : '#9a948a');
   }
 
   for (const p of g.drops) {
     if (p.t > DROP_FALL) continue;
-    const y = GROUND - 6 - (p.t / DROP_FALL) * (GROUND - HUD_H);
-    ctx.fillStyle = p.s === 0 ? '#7a4a1a' : '#2a2a6a';
-    ctx.fillRect(Math.round(p.x) - cam - 3, Math.round(y), 6, 6);
+    const y = GROUND - 4 - (p.t / DROP_FALL) * (GROUND - HUD_H);
+    ball(ctx, p.x - cam, y, 3, '#6b3f1f');
   }
 
   drawHud(ctx, g, ui);
 }
 
-function drawBase(ctx, g, s, cam, ui) {
-  const side = g.sides[s], b = side.base, d = side.dir;
-  const bx = Math.round(b.x - b.w / 2) - cam;
-  ctx.fillStyle = b.hitT > 0 ? '#fff' : BASE_COLORS[s];
-  ctx.fillRect(bx, GROUND - BASE_H, b.w, BASE_H);
-  ctx.fillStyle = ERA_COLORS[side.era];
-  ctx.fillRect(bx, GROUND - BASE_H, b.w, 4);
-  hpBar(ctx, bx, GROUND - BASE_H - 6, b.w, b.hp / b.maxHp);
+function ball(ctx, x, y, r, color) {
+  ctx.fillStyle = '#22140e';
+  ctx.beginPath(); ctx.arc(x, y, r + 1 / RES, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+}
 
-  const tx = Math.round(b.x + d * b.w / 2 - TURRET_W / 2) - cam;
+function drawUnit(ctx, g, u, s, cam) {
+  const def = u.def, d = g.sides[s].dir;
+  const cx = u.x - cam, by = GROUND + u.z * 1.5; // profundidade espalhada na largura da estradinha
+  ctx.fillStyle = 'rgba(30,20,10,0.28)'; // sombra no chão
+  ctx.beginPath(); ctx.ellipse(cx, by, def.w * 0.6, 2.2, 0, 0, Math.PI * 2); ctx.fill();
+
+  // qual quadro: andando pelo passo; atacando pelo tempo até/desde o golpe (o impacto cai no quadro 2)
+  let anim = 'walk', i = 0;
+  if (u.state === WALK) i = Math.floor(Math.abs(u.x) / STRIDE) % 4;
+  else if (u.state === ATTACK) {
+    const since = def.cd - u.cd;
+    if (since < 0.12) { anim = 'attack'; i = 2; }
+    else if (since < 0.28) { anim = 'attack'; i = 3; }
+    else if (u.cd < 0.12) { anim = 'attack'; i = 1; }
+    else if (u.cd < 0.3) { anim = 'attack'; i = 0; }
+  }
+  let h = def.sprite ? draw1(ctx, frame(def.sprite, s, anim, i), cx, by, u.hitT > 0) : 0;
+  if (h) h = frame(def.sprite, s, 'walk', 0)[3] / RES; // barra de vida não pula junto com o quadro
+  else {
+    // era sem arte ainda: quadrado colorido
+    const x = Math.round(cx - def.w / 2);
+    h = def.h;
+    ctx.fillStyle = u.hitT > 0 ? '#fff' : COLORS[s][def.type];
+    ctx.fillRect(x, by - h, def.w, h);
+    ctx.fillStyle = ERA_COLORS[def.era];
+    ctx.fillRect(x, by - h, def.w, 3);
+    ctx.fillStyle = '#222'; // olhinho pra mostrar pra onde olha
+    ctx.fillRect(d > 0 ? x + def.w - 5 : x + 3, by - h + 5, 2, 2);
+  }
+  if (u.hp < def.hp) hpBar(ctx, Math.round(cx - def.w / 2), by - h - 4, def.w, u.hp / def.hp);
+}
+
+// capivara derrotada: fica tonta, cai, dorme (zZ) e some
+function drawSleeping(ctx, u, cam) {
+  const t = u.deadT, cx = u.x - cam, by = GROUND + u.z * 1.5;
+  ctx.globalAlpha = Math.min(1, (DYING_TIME - t) / 0.4);
+  const f = u.def.sprite && frame(u.def.sprite, u.s, 'ko', t < 0.2 ? 0 : t < 0.45 ? 1 : 2);
+  const h = draw1(ctx, f, cx, by, false) || 6;
+  if (t > 0.6) {
+    ctx.fillStyle = '#fff';
+    ctx.font = '7px monospace';
+    const rise = (t - 0.6) * 12;
+    ctx.fillText('z', cx + 4, by - h - 2 - rise);
+    if (t > 0.9) ctx.fillText('Z', cx + 8, by - h - 8 - rise);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawBase(ctx, g, s, cam, ui) {
+  const side = g.sides[s], b = side.base, d = side.dir, cx = b.x - cam;
+  const h = sprite(ctx, 'base', s, cx, GROUND + 12);
+  if (b.hitT > 0) {
+    ctx.globalAlpha = 0.35;
+    sprite(ctx, 'base', s, cx, GROUND + 12, true);
+    ctx.globalAlpha = 1;
+  }
+  hpBar(ctx, Math.round(cx - b.w / 2), GROUND + 12 - h - 6, b.w, b.hp / b.maxHp);
+
+  const fx = b.x + d * b.w / 2 - cam;
   for (let i = 0; i < side.slots.length; i++) {
-    const t = side.slots[i], y = slotY(i);
+    const t = side.slots[i], y = slotY(i) + TURRET_H;
     if (!t) {
       ctx.fillStyle = 'rgba(0,0,0,0.3)';
-      ctx.fillRect(tx, y, TURRET_W, TURRET_H);
+      ctx.fillRect(Math.round(fx - TURRET_W / 2), y - TURRET_H, TURRET_W, TURRET_H);
       continue;
     }
-    const kick = t.cd > t.def.cd - 0.1 ? -2 * d : 0; // coice do tiro
-    ctx.fillStyle = s === 0 && ui.selling ? '#e33' : TURRET_COLORS[t.def.type];
-    ctx.fillRect(tx, y, TURRET_W, TURRET_H);
-    ctx.fillStyle = ERA_COLORS[t.def.era];
-    ctx.fillRect(tx, y, TURRET_W, 2);
-    ctx.fillStyle = '#222';
-    ctx.fillRect(d > 0 ? tx + TURRET_W + kick : tx - 6 + kick, y + 3, 6, 3);
+    const kick = t.cd > t.def.cd - 0.1 ? -1.5 * d : 0; // coice do tiro
+    if (!sprite(ctx, t.def.sprite, s, fx + kick, y)) {
+      ctx.fillStyle = TURRET_COLORS[t.def.type];
+      ctx.fillRect(Math.round(fx - TURRET_W / 2 + kick), y - TURRET_H, TURRET_W, TURRET_H);
+      ctx.fillStyle = ERA_COLORS[t.def.era];
+      ctx.fillRect(Math.round(fx - TURRET_W / 2 + kick), y - TURRET_H, TURRET_W, 2);
+    }
+    if (s === 0 && ui.selling) {
+      ctx.fillStyle = 'rgba(230,50,50,0.45)';
+      ctx.fillRect(Math.round(fx - 10), y - 18, 20, 18);
+    }
   }
 }
 
@@ -173,7 +248,7 @@ function drawHud(ctx, g, ui) {
     if (i === 0) hpBar(ctx, x, y + 16, 14, 1 - Math.max(0, me.trainT) / def.train);
   }
   ctx.textAlign = 'right'; ctx.fillStyle = '#123';
-  ctx.fillText(`${era.name} · ${fmt(g.time)}`, W - 6, HUD_H + 4);
+  ctx.fillText(`${era.name} · ${fmt(g.time)}${ui.muted ? " · mudo (M)" : ""}`, W - 6, HUD_H + 4);
   if (ui.showFps) ctx.fillText(`${ui.fps} fps`, W - 6, HUD_H + 16);
   ctx.textAlign = 'left';
 
@@ -198,7 +273,8 @@ function overlay(ctx, title, lines) {
 }
 
 export function drawMenu(ctx, ui) {
-  ctx.drawImage(bg, 0, 0, W, H, 0, 0, W, H);
+  ctx.setTransform(RES, 0, 0, RES, 0, 0);
+  drawBg(ctx, 0);
   ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center'; ctx.textBaseline = 'top';
   ctx.fillStyle = '#f2c14e'; ctx.font = '28px monospace';

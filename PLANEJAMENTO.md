@@ -180,12 +180,12 @@ A IA é simples, baseada em orçamento e tempo, igual ao original.
 Interpretação de "32 bits": estilo GBA/Saturn, com paleta rica e sombreamento em 3–4 tons. **Não** é 32×32 fixo para tudo.
 
 ### 5.1 Especificação
-- **Resolução interna:** **640×360**, escalada por número inteiro (2× = 720p, 3× = 1080p).
+- **Resolução:** lógica em **640×360**, desenhada em **1920×1080** (3×). Os sprites usam 1 pixel da tela por pixel da arte.
 - **Mundo:** 1280 px de largura (duas telas) com câmera que rola na horizontal.
-- **Paleta:** [Resurrect 64](https://lospec.com/palette-list/resurrect-64), com 64 cores fixas para tudo. Isso ajuda na troca de paleta e na coerência visual.
+- **Paleta:** cada personagem tem paleta própria, a mesma em todos os quadros dele (sem piscar cor entre quadros).
 - **Contorno:** 1 px em tom escuro colorido (marrom-escuro, nunca preto puro).
 - **Luz:** vem de cima, à esquerda.
-- **Animação:** 8–10 fps, com 4 frames por ciclo.
+- **Animação:** quadro a quadro. Andar 4, ataque 4, nocaute 3. O andar troca de quadro pela distância andada.
 
 | Elemento | Tamanho do frame |
 |---|---|
@@ -323,10 +323,10 @@ for (const u of myUnits) {
 - [ ] Balanceamento: dá pra jogar do começo ao fim
 
 ### M2 - Arte e som da era 1
-- [ ] Corpo base da capivara (rig das 4 animações)
-- [ ] Unidades, torres, base, fundo e HUD da era 1
-- [ ] Loader do atlas e troca de paleta do inimigo
-- [ ] Efeitos sonoros e música da era 1
+- [x] Animações quadro a quadro dos dois clãs (andar, ataque, nocaute)
+- [x] Unidades, torres, base e fundo da era 1 (fundo e base inimiga ainda vão ser refeitos)
+- [x] Atlas único por era
+- [x] Efeitos sonoros e música (gerados no navegador)
 
 ### M3 - Arte das eras 2 a 5
 - [ ] Uma era por vez, reaproveitando o corpo base

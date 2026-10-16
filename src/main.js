@@ -1,20 +1,23 @@
-import { W, H, WORLD, HUD_H, TURRET_W, TURRET_H, slotY } from './data.js';
+import { W, H, RES, WORLD, HUD_H, TURRET_W, TURRET_H, slotY } from './data.js';
 import { newGame, update, train, buyTurret, buySlot, sellTurret, evolve, special } from './battle.js';
 import {
-  draw, drawMenu, BUTTONS, SLOT_BTN, SELL_BTN, TOGGLE_BTN, SPECIAL_BTN, EVOLVE_BTN, MENU_BTNS,
+  draw, drawMenu, ready, BUTTONS, SLOT_BTN, SELL_BTN, TOGGLE_BTN, SPECIAL_BTN, EVOLVE_BTN, MENU_BTNS,
 } from './render.js';
+import * as audio from './audio.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-canvas.width = W; canvas.height = H;
+canvas.width = W * RES; canvas.height = H * RES;
 ctx.imageSmoothingEnabled = false;
 
-// Escala inteira quando cabe (pixel perfeito); fracionária só em tela menor que 640×360.
+// Escala inteira em pixels reais da tela quando cabe (pixel perfeito); se a tela for menor, reduz suavizando.
 function fit() {
-  const s = Math.min(innerWidth / W, innerHeight / H);
+  const dpr = devicePixelRatio || 1;
+  const s = Math.min(innerWidth * dpr / canvas.width, innerHeight * dpr / canvas.height);
   const k = s >= 1 ? Math.floor(s) : s;
-  canvas.style.width = W * k + 'px';
-  canvas.style.height = H * k + 'px';
+  canvas.style.width = canvas.width * k / dpr + 'px';
+  canvas.style.height = canvas.height * k / dpr + 'px';
+  canvas.style.imageRendering = k >= 1 ? 'pixelated' : 'auto';
 }
 addEventListener('resize', fit);
 fit();
@@ -31,7 +34,7 @@ function loadRecords() {
 let g = null; // null = menu
 const ui = {
   cam: 0, paused: false, showFps: false, fps: 0, towers: false, selling: false,
-  hover: -1, hoverMenu: -1, records: loadRecords(), newRecord: false, saved: false,
+  hover: -1, hoverMenu: -1, records: loadRecords(), newRecord: false, saved: false, muted: audio.isMuted(),
 };
 const keys = new Set();
 let mouseX = -1, mouseY = -1, dragX = null;
@@ -50,6 +53,7 @@ function start(diff) {
 // recorde = vitória mais rápida em cada dificuldade
 function saveResult() {
   ui.saved = true;
+  audio.play(g.winner === 0 ? 'win' : 'lose');
   if (g.winner !== 0) return;
   const best = ui.records[g.diff];
   if (best && best <= g.time) return;
@@ -58,7 +62,7 @@ function saveResult() {
   try { localStorage.setItem(RECORDS_KEY, JSON.stringify(ui.records)); } catch {}
 }
 
-const pick = (i) => (ui.towers ? buyTurret(g, 0, i) : train(g, 0, i));
+const pick = (i) => { if (ui.towers ? buyTurret(g, 0, i) : train(g, 0, i)) audio.play('click'); };
 const toggleTowers = () => { ui.towers = !ui.towers; ui.selling = false; };
 
 // vaga de torre do jogador embaixo do ponto (x,y da tela), ou -1
@@ -70,6 +74,7 @@ function slotAt(x, y) {
 }
 
 canvas.addEventListener('pointerdown', (e) => {
+  audio.init();
   const [x, y] = toGame(e);
   if (!g) {
     const i = MENU_BTNS.findIndex((b) => inside(b, x, y));
@@ -83,7 +88,7 @@ canvas.addEventListener('pointerdown', (e) => {
   if (inside(EVOLVE_BTN, x, y)) return evolve(g, 0);
   const i = BUTTONS.findIndex((b) => inside(b, x, y));
   if (i >= 0) return pick(i);
-  if (ui.towers && inside(SLOT_BTN, x, y)) return buySlot(g, 0);
+  if (ui.towers && inside(SLOT_BTN, x, y)) { if (buySlot(g, 0)) audio.play('click'); return; }
   if (ui.towers && inside(SELL_BTN, x, y)) { ui.selling = !ui.selling; return; }
   if (ui.selling) {
     const k = slotAt(x, y);
@@ -104,6 +109,8 @@ canvas.addEventListener('pointerleave', () => { mouseX = -1; ui.hover = -1; ui.h
 
 addEventListener('keydown', (e) => {
   keys.add(e.code);
+  audio.init();
+  if (e.code === 'KeyM') { ui.muted = audio.toggleMute(); return; }
   const n = e.code.startsWith('Digit') ? +e.code.at(-1) - 1 : -1;
   if (e.code === 'F3') { ui.showFps = !ui.showFps; e.preventDefault(); return; }
   if (!g) { if (n >= 0 && n < MENU_BTNS.length) start(n); return; }
@@ -114,7 +121,7 @@ addEventListener('keydown', (e) => {
   else if (e.code === 'KeyE') evolve(g, 0);
   else if (e.code === 'KeyT') toggleTowers();
   else if (e.code === 'Escape') ui.selling = false;
-  else if (ui.towers && n === 3) buySlot(g, 0);
+  else if (ui.towers && n === 3) { if (buySlot(g, 0)) audio.play('click'); }
   else if (n >= 0 && n < 4) pick(n);
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
@@ -142,6 +149,8 @@ function frame(now) {
   if (g && !ui.paused) {
     acc += dt;
     while (acc >= STEP) { tick(STEP); acc -= STEP; }
+    for (const name of g.fx) audio.play(name);
+    g.fx.length = 0;
     if (g.winner >= 0 && !ui.saved) saveResult();
   }
   ui.cam = Math.max(0, Math.min(WORLD - W, ui.cam));
@@ -150,4 +159,5 @@ function frame(now) {
   if (g) draw(ctx, g, ui); else drawMenu(ctx, ui);
   requestAnimationFrame(frame);
 }
+await ready; // só começa com a arte carregada
 requestAnimationFrame(frame);

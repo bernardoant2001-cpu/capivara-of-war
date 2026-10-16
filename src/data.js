@@ -1,8 +1,9 @@
 // Todos os números do jogo. Balanceamento é aqui.
 
-export const W = 640, H = 360;     // resolução interna (o CSS amplia)
+export const W = 640, H = 360;     // resolução lógica (a lógica toda roda nela)
+export const RES = 3;              // desenho em 3x: canvas 1920x1080
 export const WORLD = 1280;         // largura do campo de batalha
-export const GROUND = 300;         // y do chão
+export const GROUND = 298;         // y do chão (começo da estradinha de terra no fundo)
 export const HUD_H = 40;
 export const BASE_W = 64, BASE_H = 96;
 
@@ -51,7 +52,10 @@ const TURRET_BASE = [
 ];
 
 const ERA_INFO = [
-  { name: 'Era da Lama', units: ['Tacape', 'Estilingue', 'Megatério'],  turrets: ['Estilingão', 'Lança-Coco', 'Catapulta'], special: 'Chuva de Cocos' },
+  {
+    name: 'Era da Lama', units: ['Tacape', 'Estilingue', 'Megatério'], turrets: ['Estilingão', 'Lança-Coco', 'Catapulta'], special: 'Chuva de Cocos',
+    sprites: { units: ['tacape', 'estilingue', 'megaterio'], turrets: ['t_estilingao', 't_lancacoco', 't_catapulta'], base: 'base' },
+  },
   { name: 'Medieval',    units: ['Espadachim', 'Arqueira', 'Cavaleira'], turrets: ['Besta', 'Arco 3x', 'Caldeirão'],         special: 'Chuva de Flechas' },
   { name: 'Navegações',  units: ['Duelista', 'Mosquete', 'Canhoneira'],  turrets: ['Canhão', 'Mosquetes', 'Morteiro'],       special: 'Bombardeio' },
   { name: 'Moderna',     units: ['Soldado', 'Metralha', 'Capitanque'],   turrets: ['Metralha', 'Foguetes', 'Torre 2x'],      special: 'Capiaviões' },
@@ -63,7 +67,7 @@ const nice = (x) => (x < 100 ? Math.round(x) : Math.round(x / 5) * 5);
 export const ERAS = ERA_INFO.map((info, k) => {
   const c = 3 ** k, p = 2.6 ** k;
   const units = UNIT_BASE.map((b, i) => {
-    const u = { ...b, ...(i === 2 && k >= 2 ? HEAVY_GUN : null), name: info.units[i], type: i, era: k };
+    const u = { ...b, ...(i === 2 && k >= 2 ? HEAVY_GUN : null), name: info.units[i], sprite: info.sprites?.units[i], type: i, era: k };
     u.cost = nice(b.cost * c);
     u.hp = nice(b.hp * p);
     u.dmg = nice(b.dmg * p);
@@ -75,7 +79,7 @@ export const ERAS = ERA_INFO.map((info, k) => {
     name: info.name,
     baseHp: nice(3000 * p),
     units,
-    turrets: TURRET_BASE.map((b, i) => ({ ...b, name: info.turrets[i], type: i, era: k, cost: nice(b.cost * c), dmg: nice(b.dmg * p) })),
+    turrets: TURRET_BASE.map((b, i) => ({ ...b, name: info.turrets[i], sprite: info.sprites?.turrets[i], type: i, era: k, cost: nice(b.cost * c), dmg: nice(b.dmg * p) })),
     special: { name: info.special, dmg: nice(60 * p), count: 15, radius: 16 },
   };
 });
