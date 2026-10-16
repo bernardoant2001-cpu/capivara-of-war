@@ -89,7 +89,7 @@ export function special(g, s) {
     const u = foes.length && Math.random() < 0.75 ? foes[Math.floor(Math.random() * foes.length)] : null;
     g.drops.push({
       s, u, off: (Math.random() - 0.5) * 48, x: side.dir > 0 ? r : WORLD - r,
-      t: DROP_FALL + i * 0.12, dmg: sp.dmg, r: sp.radius, done: false,
+      t: DROP_FALL + i * 0.12, dmg: sp.dmg, r: sp.radius, era: side.era, done: false,
     });
   }
   return true;
@@ -124,8 +124,9 @@ function front(side) {
   return best;
 }
 
-function fire(g, s, x, y0, t, dmg, splash, turret = false) {
-  g.shots.push({ s, x, x0: x, y0, t, dmg, splash, done: false });
+// era = de que era é a arma (só muda o desenho do projétil)
+function fire(g, s, x, y0, t, dmg, splash, era, turret = false) {
+  g.shots.push({ s, x, x0: x, y0, t, dmg, splash, era, done: false });
   fx(g, turret ? 'tshoot' : 'shoot', x, y0, g.sides[s].dir);
 }
 
@@ -243,7 +244,7 @@ export function update(g, dt) {
 
       if (inRange && u.cd <= 0) {
         u.cd = def.cd;
-        if (def.ranged) fire(g, s, u.x, GROUND - def.h * 0.6 + u.z * DEPTH, target, def.dmg, def.splash || 0);
+        if (def.ranged) fire(g, s, u.x, GROUND - def.h * 0.6 + u.z * DEPTH, target, def.dmg, def.splash || 0, def.era);
         else strike(g, s, target, def.dmg, def.splash || 0);
       }
     }
@@ -256,7 +257,7 @@ export function update(g, dt) {
       t.cd -= dt;
       if (t.cd <= 0 && target.def && gap(b, target, d) <= t.def.range) {
         t.cd = t.def.cd;
-        fire(g, s, b.x + d * (b.w / 2 + 10), slotY(i) + 4, target, t.def.dmg, t.def.splash || 0, true);
+        fire(g, s, b.x + d * (b.w / 2 + 10), slotY(i) + 4, target, t.def.dmg, t.def.splash || 0, t.def.era, true);
       }
     }
   }

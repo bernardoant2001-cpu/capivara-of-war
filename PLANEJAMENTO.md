@@ -330,9 +330,10 @@ for (const u of myUnits) {
 
 ### M3 - Arte das eras 2 a 5
 - [x] Era 2 (Medieval): unidades animadas, torres, Castelo de Taquara e fundo, nos dois clãs
-- [ ] Eras 3, 4 e 5
+- [x] Eras 3, 4 e 5 (Navegações, Moderna e Futuro), com fundo, base, torres e unidades animadas nos dois clãs
 - [x] Base e torres do Clã do Pântano desenhadas de propósito (sem recolorir)
-- [ ] Capivara Suprema e os 5 especiais
+- [x] Capivara Suprema animada nos dois clãs
+- [x] Projéteis e especial com cara de cada era (pedra, flecha, bala de canhão, bala, laser)
 
 ### M4 - Polimento
 - [ ] Menus, pausa, volume e tela cheia

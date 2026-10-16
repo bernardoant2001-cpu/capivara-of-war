@@ -61,9 +61,18 @@ const ERA_INFO = [
     name: 'Medieval', units: ['Espadachim', 'Arqueira', 'Cavaleira'], turrets: ['Besta', 'Arco 3x', 'Caldeirão'], special: 'Chuva de Flechas',
     sprites: { units: ['espadachim', 'arqueira', 'cavaleira'], turrets: ['t_besta', 't_arco', 't_caldeirao'], base: 'castelo' },
   },
-  { name: 'Navegações',  units: ['Duelista', 'Mosquete', 'Canhoneira'],  turrets: ['Canhão', 'Mosquetes', 'Morteiro'],       special: 'Bombardeio' },
-  { name: 'Moderna',     units: ['Soldado', 'Metralha', 'Capitanque'],   turrets: ['Metralha', 'Foguetes', 'Torre 2x'],      special: 'Capiaviões' },
-  { name: 'Futuro',      units: ['Sabre', 'Blaster', 'Capimecha'],       turrets: ['Laser', 'Titânio', 'Canhão Íon'],        special: 'Laranja Sagrada' },
+  {
+    name: 'Navegações', units: ['Duelista', 'Mosquete', 'Canhoneira'], turrets: ['Canhão', 'Mosquetes', 'Morteiro'], special: 'Bombardeio',
+    sprites: { units: ['duelista', 'mosquete', 'canhoneira'], turrets: ['t_canhao', 't_mosquetes', 't_morteiro'], base: 'forte' },
+  },
+  {
+    name: 'Moderna', units: ['Soldado', 'Metralha', 'Capitanque'], turrets: ['Metralha', 'Foguetes', 'Torre 2x'], special: 'Capiaviões',
+    sprites: { units: ['soldado', 'metralha', 'capitanque'], turrets: ['t_metralha', 't_foguetes', 't_dupla'], base: 'bunker' },
+  },
+  {
+    name: 'Futuro', units: ['Sabre', 'Blaster', 'Capimecha'], turrets: ['Laser', 'Titânio', 'Canhão Íon'], special: 'Laranja Sagrada',
+    sprites: { units: ['sabre', 'blaster', 'capimecha', 'suprema'], turrets: ['t_laser', 't_titanio', 't_ion'], base: 'cidadela' },
+  },
 ];
 
 const nice = (x) => (x < 100 ? Math.round(x) : Math.round(x / 5) * 5);
@@ -78,7 +87,7 @@ export const ERAS = ERA_INFO.map((info, k) => {
     if (u.ranged) u.range = Math.round(u.range * 1.1 ** k);
     return u;
   });
-  if (k === ERA_INFO.length - 1) units.push({ ...SUPREMA, type: 3, era: k });
+  if (k === ERA_INFO.length - 1) units.push({ ...SUPREMA, sprite: info.sprites?.units[3], type: 3, era: k });
   return {
     name: info.name,
     art: !!info.sprites, // tem atlas e fundo próprios (assets/eraN.png, bgN.webp)

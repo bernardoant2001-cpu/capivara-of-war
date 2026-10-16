@@ -8,8 +8,8 @@ import { ATTACK, WALK, canEvolve, DYING_TIME } from './battle.js';
 const atlases = [], whites = [], bgs = [];
 let FRAMES = {};
 // cada era com arte tem assets/eraN.png + eraN.json (quadros) e assets/bgN.webp (fundo)
-export const ready = Promise.all([document.fonts.load('8px "Jersey 10"'), ...ERAS.map(async (era, k) => {
-  if (!era.art) return;
+async function loadEra(k) {
+  if (!ERAS[k].art) return;
   const img = new Image(), bg = new Image();
   img.src = `assets/era${k + 1}.png`;
   bg.src = `assets/bg${k + 1}.webp`;
@@ -22,7 +22,10 @@ export const ready = Promise.all([document.fonts.load('8px "Jersey 10"'), ...ERA
   c.globalCompositeOperation = 'source-in';
   c.fillStyle = '#fff'; c.fillRect(0, 0, w.width, w.height);
   atlases[k] = img; whites[k] = w; bgs[k] = bg;
-})]);
+}
+// eras 1 e 2 seguram o começo; as outras baixam em segundo plano (até lá aparecem como quadrados)
+export const ready = Promise.all([document.fonts.load('8px "Jersey 10"'), loadEra(0), loadEra(1)])
+  .then(() => { for (let k = 2; k < ERAS.length; k++) loadEra(k).catch(() => {}); });
 
 // a era com arte mais recente que não passa de `era` (as que ainda não têm arte usam a anterior)
 const artEra = (era, list) => { while (era > 0 && !list[era]) era--; return era; };
@@ -47,7 +50,8 @@ const sprite = (ctx, name, s, cx, by, flash = 0) => draw1(ctx, name && FRAMES[s 
 const keys = {};
 function frame(name, s, anim, i) {
   const k = keys[name] ||= [{}, {}];
-  const a = k[s][anim] ||= [0, 1, 2, 3].map((n) => FRAMES[`${name}${s ? '_inimigo' : ''}_${anim}_${n}`]);
+  let a = k[s][anim];
+  if (!a || !a[0]) a = k[s][anim] = [0, 1, 2, 3].map((n) => FRAMES[`${name}${s ? '_inimigo' : ''}_${anim}_${n}`]); // era ainda baixando: tenta de novo depois
   return a[i];
 }
 
@@ -116,20 +120,67 @@ export function draw(ctx, g, ui) {
 
   for (const p of g.shots) {
     const total = Math.abs(p.t.x - p.x0) || 1;
-    const k = Math.min(1, Math.abs(p.x - p.x0) / total);
-    const y = p.y0 + (GROUND - 12 - p.y0) * k - Math.sin(k * Math.PI) * 18;
-    ball(ctx, p.x - cam, y, p.splash ? 2.5 : 1.5, p.splash ? '#6b3f1f' : '#9a948a');
+    const k = Math.min(1, Math.abs(p.x - p.x0) / total), arc = ARC[p.era];
+    const y = p.y0 + (GROUND - 12 - p.y0) * k - Math.sin(k * Math.PI) * arc;
+    // inclinação da trajetória, pra flecha e laser apontarem pra onde vão
+    const dir = Math.sign(p.t.x - p.x) || 1, slope = ((GROUND - 12 - p.y0) - Math.cos(k * Math.PI) * Math.PI * arc) / total;
+    projectile(ctx, p.x - cam, y, p.era, p.splash, dir, slope);
   }
 
   for (const p of g.drops) {
     if (p.t > DROP_FALL) continue;
     const y = GROUND - 4 - (p.t / DROP_FALL) * (GROUND - HUD_H);
-    ball(ctx, p.x - cam, y, 3, '#6b3f1f');
+    drop(ctx, p.x - cam, y, p.era);
   }
 
   drawParticles(ctx, dt, cam);
   ctx.setTransform(RES, 0, 0, RES, 0, 0);
   drawHud(ctx, g, ui);
+}
+
+// altura do arco do tiro por era: pedra/flecha/bala de canhão sobem, bala e laser vão quase retos
+const ARC = [18, 22, 16, 4, 0];
+
+// projétil de unidade ou torre, com cara de cada era
+function projectile(ctx, x, y, era, splash, dir, slope) {
+  if (era === 0) return ball(ctx, x, y, splash ? 2.5 : 1.5, splash ? '#6b4a2a' : '#9a948a'); // pedra / coco
+  if (era === 2) return ball(ctx, x, y, splash ? 2.8 : 1.6, '#2b2b2b'); // bala de canhão / chumbo
+  const len = era === 1 ? 7 : era === 3 ? 4 : 9, ang = Math.atan2(slope * dir, dir);
+  const dx = Math.cos(ang) * len, dy = Math.sin(ang) * len;
+  ctx.lineCap = 'round';
+  if (era === 1) { // flecha
+    ctx.strokeStyle = '#3a2414'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(x - dx, y - dy); ctx.lineTo(x, y); ctx.stroke();
+    ctx.fillStyle = '#d8d8d8'; ctx.fillRect(x - 1, y - 1, 2, 2);
+    return;
+  }
+  if (splash) return ball(ctx, x, y, 2.6, era === 4 ? '#7ff6ff' : '#4a5a2a'); // foguete / bola de energia
+  ctx.strokeStyle = era === 3 ? '#ffd84a' : '#5ff0ff'; // bala tracejante / laser
+  ctx.lineWidth = era === 3 ? 1.4 : 2.2;
+  ctx.beginPath(); ctx.moveTo(x - dx, y - dy); ctx.lineTo(x, y); ctx.stroke();
+  if (era === 4) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.8; ctx.stroke(); }
+}
+
+// o que cai do céu no especial de cada era
+function drop(ctx, x, y, era) {
+  if (era === 0) return ball(ctx, x, y, 3, '#6b3f1f'); // coco
+  if (era === 2) return ball(ctx, x, y, 3, '#2b2b2b'); // bala de canhão
+  ctx.lineCap = 'round';
+  if (era === 1) { // flecha caindo de ponta
+    ctx.strokeStyle = '#3a2414'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(x, y - 9); ctx.lineTo(x, y); ctx.stroke();
+    ctx.fillStyle = '#d8d8d8'; ctx.fillRect(x - 1, y - 1, 2, 2.5);
+    return;
+  }
+  if (era === 3) { // bomba
+    ball(ctx, x, y, 3, '#4a5a2a');
+    ctx.fillStyle = '#2a3018'; ctx.fillRect(x - 2.5, y - 6, 5, 2);
+    return;
+  }
+  // raio da laranja sagrada: coluna de luz descendo
+  ctx.fillStyle = 'rgba(255,190,80,0.35)'; ctx.fillRect(x - 3, HUD_H, 6, y - HUD_H);
+  ctx.fillStyle = '#ffe6a0'; ctx.fillRect(x - 1, HUD_H, 2, y - HUD_H);
+  ball(ctx, x, y, 2.5, '#ffb347');
 }
 
 function ball(ctx, x, y, r, color) {
