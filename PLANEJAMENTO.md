@@ -329,7 +329,9 @@ for (const u of myUnits) {
 - [x] Efeitos sonoros e música (gerados no navegador)
 
 ### M3 - Arte das eras 2 a 5
-- [ ] Uma era por vez, reaproveitando o corpo base
+- [x] Era 2 (Medieval): unidades animadas, torres, Castelo de Taquara e fundo, nos dois clãs
+- [ ] Eras 3, 4 e 5
+- [x] Base e torres do Clã do Pântano desenhadas de propósito (sem recolorir)
 - [ ] Capivara Suprema e os 5 especiais
 
 ### M4 - Polimento

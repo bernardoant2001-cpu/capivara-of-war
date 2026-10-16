@@ -45,8 +45,13 @@ const toGame = (e) => {
 };
 const inside = (b, x, y) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
 
+// ?era=N no endereço começa a partida com os dois lados já na era N (pra testar a arte de cada era)
+const startEra = Math.max(1, +new URLSearchParams(location.search).get('era') || 1);
+
 function start(diff) {
   g = newGame(diff);
+  for (let i = 1; i < startEra; i++) { evolve(g, 0, true); evolve(g, 1, true); }
+  g.sides[0].gold = g.sides[1].gold = 175 * 3 ** (startEra - 1);
   Object.assign(ui, { cam: 0, paused: false, towers: false, selling: false, newRecord: false, saved: false });
 }
 

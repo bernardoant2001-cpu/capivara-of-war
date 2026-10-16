@@ -4,33 +4,44 @@ import {
 } from './data.js';
 import { ATTACK, WALK, canEvolve, DYING_TIME } from './battle.js';
 
-// Sprites: um atlas por era (por enquanto só a era 1) + versão branca pro piscar de dano.
-const atlas = new Image(), bg = new Image();
-atlas.src = 'assets/era1.png';
-bg.src = 'assets/bg1.webp';
-let FRAMES = {}, white = null;
-export const ready = Promise.all([
-  fetch('assets/era1.json').then((r) => r.json()).then((f) => { FRAMES = f; }),
-  atlas.decode(),
-  bg.decode(),
-]).then(() => {
-  white = document.createElement('canvas');
-  white.width = atlas.width; white.height = atlas.height;
-  const w = white.getContext('2d');
-  w.drawImage(atlas, 0, 0);
-  w.globalCompositeOperation = 'source-in';
-  w.fillStyle = '#fff'; w.fillRect(0, 0, white.width, white.height);
-});
+// Sprites: um atlas por era que já tem arte + versão branca de cada um pro piscar de dano.
+const atlases = [], whites = [], bgs = [];
+let FRAMES = {};
+// cada era com arte tem assets/eraN.png + eraN.json (quadros) e assets/bgN.webp (fundo)
+export const ready = Promise.all(ERAS.map(async (era, k) => {
+  if (!era.art) return;
+  const img = new Image(), bg = new Image();
+  img.src = `assets/era${k + 1}.png`;
+  bg.src = `assets/bg${k + 1}.webp`;
+  const [frames] = await Promise.all([fetch(`assets/era${k + 1}.json`).then((r) => r.json()), img.decode(), bg.decode()]);
+  for (const n in frames) FRAMES[n] = [...frames[n], k];
+  const w = document.createElement('canvas');
+  w.width = img.width; w.height = img.height;
+  const c = w.getContext('2d');
+  c.drawImage(img, 0, 0);
+  c.globalCompositeOperation = 'source-in';
+  c.fillStyle = '#fff'; c.fillRect(0, 0, w.width, w.height);
+  atlases[k] = img; whites[k] = w; bgs[k] = bg;
+}));
+
+// a era com arte mais recente que não passa de `era` (as que ainda não têm arte usam a anterior)
+const artEra = (era, list) => { while (era > 0 && !list[era]) era--; return era; };
 
 // Desenha o quadro com o pé em (cx, by); o x de referência (âncora) do quadro fica em cx. Retorna a altura, ou 0 se não existe.
 function draw1(ctx, f, cx, by, flash) {
   if (!f) return 0;
   const w = f[2] / RES, h = f[3] / RES;
   const x = Math.round((cx - f[4] / RES) * RES) / RES, y = Math.round((by - h) * RES) / RES;
-  ctx.drawImage(flash ? white : atlas, f[0], f[1], f[2], f[3], x, y, w, h);
+  ctx.drawImage(atlases[f[5]], f[0], f[1], f[2], f[3], x, y, w, h);
+  if (flash) { // brilho branco por cima, sem apagar o desenho (flash = intensidade, 0 a 1)
+    const a = ctx.globalAlpha;
+    ctx.globalAlpha = a * flash;
+    ctx.drawImage(whites[f[5]], f[0], f[1], f[2], f[3], x, y, w, h);
+    ctx.globalAlpha = a;
+  }
   return h;
 }
-const sprite = (ctx, name, s, cx, by, flash = false) => draw1(ctx, name && FRAMES[s ? name + '_inimigo' : name], cx, by, flash);
+const sprite = (ctx, name, s, cx, by, flash = 0) => draw1(ctx, name && FRAMES[s ? name + '_inimigo' : name], cx, by, flash);
 
 // quadro de animação de um personagem (cache dos nomes pra não montar string todo frame)
 const keys = {};
@@ -61,8 +72,8 @@ export const TOGGLE_BTN = { x: 584, y: 6, w: 52, h: 28 };
 export const MENU_BTNS = DIFFICULTIES.map((_, i) => ({ x: W / 2 - 80, y: 130 + i * 36, w: 160, h: 28 }));
 
 // fundo: a imagem cobre o campo inteiro (WORLD), por frame é só 1 drawImage
-function drawBg(ctx, cam) {
-  const k = bg.width / WORLD;
+function drawBg(ctx, cam, era) {
+  const bg = bgs[artEra(era, bgs)], k = bg.width / WORLD;
   ctx.drawImage(bg, cam * k, 0, W * k, bg.height, 0, 0, W, H);
 }
 
@@ -75,7 +86,7 @@ const hpBar = (ctx, x, y, w, frac, color) => {
 export function draw(ctx, g, ui) {
   ctx.setTransform(RES, 0, 0, RES, 0, 0);
   const cam = Math.round(ui.cam);
-  drawBg(ctx, cam);
+  drawBg(ctx, cam, g.sides[0].era);
 
   for (let s = 0; s < 2; s++) drawBase(ctx, g, s, cam, ui);
 
@@ -134,7 +145,7 @@ function drawUnit(ctx, g, u, s, cam) {
     else if (u.cd < 0.12) { anim = 'attack'; i = 1; }
     else if (u.cd < 0.3) { anim = 'attack'; i = 0; }
   }
-  let h = def.sprite ? draw1(ctx, frame(def.sprite, s, anim, i), cx, by, u.hitT > 0) : 0;
+  let h = def.sprite ? draw1(ctx, frame(def.sprite, s, anim, i), cx, by, u.hitT > 0 ? 0.55 : 0) : 0;
   if (h) h = frame(def.sprite, s, 'walk', 0)[3] / RES; // barra de vida não pula junto com o quadro
   else {
     // era sem arte ainda: quadrado colorido
@@ -168,12 +179,8 @@ function drawSleeping(ctx, u, cam) {
 
 function drawBase(ctx, g, s, cam, ui) {
   const side = g.sides[s], b = side.base, d = side.dir, cx = b.x - cam;
-  const h = sprite(ctx, 'base', s, cx, GROUND + 12);
-  if (b.hitT > 0) {
-    ctx.globalAlpha = 0.35;
-    sprite(ctx, 'base', s, cx, GROUND + 12, true);
-    ctx.globalAlpha = 1;
-  }
+  const base = ERAS[artEra(side.era, atlases)].baseSprite;
+  const h = sprite(ctx, base, s, cx, GROUND + 12, b.hitT > 0 ? 0.25 : 0);
   hpBar(ctx, Math.round(cx - b.w / 2), GROUND + 12 - h - 6, b.w, b.hp / b.maxHp);
 
   const fx = b.x + d * b.w / 2 - cam;
@@ -274,7 +281,7 @@ function overlay(ctx, title, lines) {
 
 export function drawMenu(ctx, ui) {
   ctx.setTransform(RES, 0, 0, RES, 0, 0);
-  drawBg(ctx, 0);
+  drawBg(ctx, 0, 0);
   ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center'; ctx.textBaseline = 'top';
   ctx.fillStyle = '#f2c14e'; ctx.font = '28px monospace';

@@ -56,7 +56,10 @@ const ERA_INFO = [
     name: 'Era da Lama', units: ['Tacape', 'Estilingue', 'Megatério'], turrets: ['Estilingão', 'Lança-Coco', 'Catapulta'], special: 'Chuva de Cocos',
     sprites: { units: ['tacape', 'estilingue', 'megaterio'], turrets: ['t_estilingao', 't_lancacoco', 't_catapulta'], base: 'base' },
   },
-  { name: 'Medieval',    units: ['Espadachim', 'Arqueira', 'Cavaleira'], turrets: ['Besta', 'Arco 3x', 'Caldeirão'],         special: 'Chuva de Flechas' },
+  {
+    name: 'Medieval', units: ['Espadachim', 'Arqueira', 'Cavaleira'], turrets: ['Besta', 'Arco 3x', 'Caldeirão'], special: 'Chuva de Flechas',
+    sprites: { units: ['espadachim', 'arqueira', 'cavaleira'], turrets: ['t_besta', 't_arco', 't_caldeirao'], base: 'castelo' },
+  },
   { name: 'Navegações',  units: ['Duelista', 'Mosquete', 'Canhoneira'],  turrets: ['Canhão', 'Mosquetes', 'Morteiro'],       special: 'Bombardeio' },
   { name: 'Moderna',     units: ['Soldado', 'Metralha', 'Capitanque'],   turrets: ['Metralha', 'Foguetes', 'Torre 2x'],      special: 'Capiaviões' },
   { name: 'Futuro',      units: ['Sabre', 'Blaster', 'Capimecha'],       turrets: ['Laser', 'Titânio', 'Canhão Íon'],        special: 'Laranja Sagrada' },
@@ -77,6 +80,8 @@ export const ERAS = ERA_INFO.map((info, k) => {
   if (k === ERA_INFO.length - 1) units.push({ ...SUPREMA, type: 3, era: k });
   return {
     name: info.name,
+    art: !!info.sprites, // tem atlas e fundo próprios (assets/eraN.png, bgN.webp)
+    baseSprite: info.sprites?.base,
     baseHp: nice(3000 * p),
     units,
     turrets: TURRET_BASE.map((b, i) => ({ ...b, name: info.turrets[i], sprite: info.sprites?.turrets[i], type: i, era: k, cost: nice(b.cost * c), dmg: nice(b.dmg * p) })),
