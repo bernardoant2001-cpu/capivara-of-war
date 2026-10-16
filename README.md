@@ -12,6 +12,8 @@ npx serve
 
 Testes da lógica: `node test.js`
 
+Atalhos pra testar: `?era=2` começa os dois lados na era 2, `?ouro=5000` começa com 5000 de ouro (dá pra juntar: `?era=3&ouro=9000`).
+
 ## Controles
 
 - `1` `2` `3` `4` treinam unidades (o `4` só na última era)

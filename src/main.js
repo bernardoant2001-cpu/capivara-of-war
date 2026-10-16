@@ -34,7 +34,7 @@ function loadRecords() {
 let g = null; // null = menu
 const ui = {
   cam: 0, paused: false, showFps: false, fps: 0, towers: false, selling: false,
-  hover: -1, hoverMenu: -1, records: loadRecords(), newRecord: false, saved: false, muted: audio.isMuted(),
+  hover: -1, hoverMenu: -1, mx: -1, my: -1, records: loadRecords(), newRecord: false, saved: false, muted: audio.isMuted(),
 };
 const keys = new Set();
 let mouseX = -1, mouseY = -1, dragX = null;
@@ -45,13 +45,14 @@ const toGame = (e) => {
 };
 const inside = (b, x, y) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
 
-// ?era=N no endereço começa a partida com os dois lados já na era N (pra testar a arte de cada era)
-const startEra = Math.max(1, +new URLSearchParams(location.search).get('era') || 1);
+// atalhos de teste no endereço: ?era=N começa os dois lados na era N; ?ouro=N começa com esse ouro
+const params = new URLSearchParams(location.search);
+const startEra = Math.max(1, +params.get('era') || 1), startGold = +params.get('ouro') || 0;
 
 function start(diff) {
   g = newGame(diff);
   for (let i = 1; i < startEra; i++) { evolve(g, 0, true); evolve(g, 1, true); }
-  g.sides[0].gold = g.sides[1].gold = 175 * 3 ** (startEra - 1);
+  g.sides[0].gold = g.sides[1].gold = startGold || 175 * 3 ** (startEra - 1);
   Object.assign(ui, { cam: 0, paused: false, towers: false, selling: false, newRecord: false, saved: false });
 }
 
@@ -72,7 +73,7 @@ const toggleTowers = () => { ui.towers = !ui.towers; ui.selling = false; };
 
 // vaga de torre do jogador embaixo do ponto (x,y da tela), ou -1
 function slotAt(x, y) {
-  const b = g.sides[0].base, fx = b.x + b.w / 2, wx = x + ui.cam;
+  const b = g.sides[0].base, fx = b.x + b.w / 2 + 4, wx = x + ui.cam; // torre fica em cima da plataforma
   if (Math.abs(wx - fx) > TURRET_W / 2 + 4) return -1;
   for (let i = 0; i < g.sides[0].slots.length; i++) if (y >= slotY(i) - 2 && y < slotY(i) + TURRET_H + 2) return i;
   return -1;
@@ -105,12 +106,13 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 canvas.addEventListener('pointermove', (e) => {
   [mouseX, mouseY] = toGame(e);
+  ui.mx = mouseX; ui.my = mouseY;
   ui.hover = BUTTONS.findIndex((b) => inside(b, mouseX, mouseY));
   ui.hoverMenu = MENU_BTNS.findIndex((b) => inside(b, mouseX, mouseY));
   if (dragX !== null) { ui.cam -= mouseX - dragX; dragX = mouseX; }
 });
 canvas.addEventListener('pointerup', (e) => { dragX = null; if (e.pointerType !== 'mouse') mouseX = -1; });
-canvas.addEventListener('pointerleave', () => { mouseX = -1; ui.hover = -1; ui.hoverMenu = -1; });
+canvas.addEventListener('pointerleave', () => { mouseX = ui.mx = -1; ui.hover = -1; ui.hoverMenu = -1; });
 
 addEventListener('keydown', (e) => {
   keys.add(e.code);
