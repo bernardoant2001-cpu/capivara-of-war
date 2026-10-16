@@ -1,11 +1,14 @@
 // Lógica pura do jogo (sem DOM), roda no navegador e no node (test.js).
 import {
-  WORLD, GROUND, BASE_W, SPACING, HOLD_DIST, QUEUE_MAX, MAX_UNITS, START_GOLD,
+  WORLD, GROUND, DEPTH, BASE_W, SPACING, HOLD_DIST, QUEUE_MAX, MAX_UNITS, START_GOLD,
   INCOME, KILL_GOLD, KILL_XP, BASE_XP, SHOT_SPEED, XP_TO_EVOLVE, SPECIAL_CD, DROP_FALL,
   MAX_SLOTS, SLOT_COSTS, SELL_REFUND, slotY, DIFFICULTIES, ERAS,
 } from './data.js';
 
 export const WALK = 0, ATTACK = 1, IDLE = 2;
+
+// evento pra som e efeito visual: nome, x, y e direção de quem causou (4 valores seguidos, sem criar objeto)
+const fx = (g, name, x, y, dir) => g.fx.push(name, x, y, dir);
 
 function makeSide(dir, mult) {
   const x = dir > 0 ? BASE_W / 2 : WORLD - BASE_W / 2, hp = ERAS[0].baseHp;
@@ -67,7 +70,7 @@ export function evolve(g, s, force = false) {
   const side = g.sides[s];
   if (g.winner >= 0 || side.era >= ERAS.length - 1 || (!force && !canEvolve(side))) return false;
   side.era++;
-  g.fx.push('evolve');
+  fx(g, 'evolve', side.base.x, GROUND - 40, side.dir);
   const b = side.base, hp = ERAS[side.era].baseHp;
   b.hp += hp - b.maxHp;
   b.maxHp = hp;
@@ -79,7 +82,7 @@ export function special(g, s) {
   const side = g.sides[s], sp = ERAS[side.era].special, foes = g.sides[1 - s].units;
   if (g.winner >= 0 || side.specialT > 0) return false;
   side.specialT = SPECIAL_CD;
-  g.fx.push('special');
+  fx(g, 'special', 0, 0, side.dir);
   const lo = WORLD * 0.2, hi = WORLD - BASE_W;
   for (let i = 0; i < sp.count; i++) {
     const r = lo + Math.random() * (hi - lo);
@@ -121,9 +124,9 @@ function front(side) {
   return best;
 }
 
-function fire(g, s, x, y0, t, dmg, splash) {
+function fire(g, s, x, y0, t, dmg, splash, turret = false) {
   g.shots.push({ s, x, x0: x, y0, t, dmg, splash, done: false });
-  g.fx.push('shoot');
+  fx(g, turret ? 'tshoot' : 'shoot', x, y0, g.sides[s].dir);
 }
 
 function hurt(g, s, t, dmg) {
@@ -136,11 +139,11 @@ function hurt(g, s, t, dmg) {
       me.gold += t.def.cost * KILL_GOLD * me.mult;
       me.xp += t.def.cost * KILL_XP;
       me.kills++;
-      g.fx.push('die');
-    } else g.fx.push('hit');
+      fx(g, 'die', t.x, GROUND + t.z * DEPTH, me.dir);
+    } else fx(g, 'hit', t.x, GROUND + t.z * DEPTH - t.def.h * 0.6, me.dir);
   } else {
     me.xp += dmg * BASE_XP;
-    g.fx.push('hit');
+    fx(g, 'hit', t.x - me.dir * t.w / 2, GROUND - 25, me.dir);
     if (t.hp <= 0) g.winner = s;
   }
 }
@@ -148,7 +151,7 @@ function hurt(g, s, t, dmg) {
 // Acerto normal ou em área (área só pega unidade; se o alvo for a base, bate nela).
 function strike(g, s, t, dmg, splash) {
   if (!splash || !t.def) return hurt(g, s, t, dmg);
-  g.fx.push('boom');
+  fx(g, 'boom', t.x, GROUND + 4, g.sides[s].dir);
   const x = t.x, us = g.sides[1 - s].units;
   for (let j = 0; j < us.length; j++) if (Math.abs(us[j].x - x) <= splash) hurt(g, s, us[j], dmg);
 }
@@ -199,7 +202,7 @@ function ai(g, dt) {
 export function update(g, dt) {
   if (g.winner >= 0) return;
   g.time += dt;
-  if (g.fx.length > 200) g.fx.length = 0; // ninguém tocando os sons (ex.: nos testes)
+  if (g.fx.length > 800) g.fx.length = 0; // ninguém consumindo os eventos (ex.: nos testes)
   if (g.ai) ai(g, dt);
 
   for (let s = 0; s < 2; s++) {
@@ -240,7 +243,7 @@ export function update(g, dt) {
 
       if (inRange && u.cd <= 0) {
         u.cd = def.cd;
-        if (def.ranged) fire(g, s, u.x, GROUND - def.h * 0.6 + u.z, target, def.dmg, def.splash || 0);
+        if (def.ranged) fire(g, s, u.x, GROUND - def.h * 0.6 + u.z * DEPTH, target, def.dmg, def.splash || 0);
         else strike(g, s, target, def.dmg, def.splash || 0);
       }
     }
@@ -253,7 +256,7 @@ export function update(g, dt) {
       t.cd -= dt;
       if (t.cd <= 0 && target.def && gap(b, target, d) <= t.def.range) {
         t.cd = t.def.cd;
-        fire(g, s, b.x + d * b.w / 2, slotY(i), target, t.def.dmg, t.def.splash || 0);
+        fire(g, s, b.x + d * (b.w / 2 + 10), slotY(i) + 4, target, t.def.dmg, t.def.splash || 0, true);
       }
     }
   }
@@ -273,6 +276,7 @@ export function update(g, dt) {
     if (p.u && p.t <= DROP_FALL) { p.x = p.u.x + p.off; p.u = null; } // mira quando começa a cair
     if (p.t > 0) continue;
     p.done = true;
+    fx(g, 'thud', p.x, GROUND + 4, 0);
     const us = g.sides[1 - p.s].units;
     for (let j = 0; j < us.length; j++) if (Math.abs(us[j].x - p.x) <= p.r) hurt(g, p.s, us[j], p.dmg);
   }

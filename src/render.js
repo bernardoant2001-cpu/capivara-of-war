@@ -1,5 +1,5 @@
 import {
-  W, H, RES, WORLD, GROUND, HUD_H, QUEUE_MAX, ERAS, XP_TO_EVOLVE, DROP_FALL, DIFFICULTIES, SPECIAL_CD,
+  W, H, RES, WORLD, GROUND, DEPTH, HUD_H, QUEUE_MAX, ERAS, XP_TO_EVOLVE, DROP_FALL, DIFFICULTIES, SPECIAL_CD,
   MAX_SLOTS, SLOT_COSTS, TURRET_W, TURRET_H, slotY,
 } from './data.js';
 import { ATTACK, WALK, canEvolve, DYING_TIME } from './battle.js';
@@ -88,7 +88,11 @@ function hpBar(ctx, x, y, w, frac, color, h = 3) {
 }
 
 export function draw(ctx, g, ui) {
-  ctx.setTransform(RES, 0, 0, RES, 0, 0);
+  // tremor: só o campo de batalha mexe, o painel fica parado
+  const dt = ui.dt || 0;
+  shake *= Math.exp(-dt * 9);
+  const sx = shake > 0.05 ? Math.round(rnd(-shake, shake) * RES) : 0, sy = shake > 0.05 ? Math.round(rnd(-shake, shake) * RES) : 0;
+  ctx.setTransform(RES, 0, 0, RES, sx, sy);
   const cam = Math.round(ui.cam);
   drawBg(ctx, cam, g.sides[0].era);
 
@@ -123,6 +127,8 @@ export function draw(ctx, g, ui) {
     ball(ctx, p.x - cam, y, 3, '#6b3f1f');
   }
 
+  drawParticles(ctx, dt, cam);
+  ctx.setTransform(RES, 0, 0, RES, 0, 0);
   drawHud(ctx, g, ui);
 }
 
@@ -135,7 +141,7 @@ function ball(ctx, x, y, r, color) {
 
 function drawUnit(ctx, g, u, s, cam) {
   const def = u.def, d = g.sides[s].dir;
-  const cx = u.x - cam, by = GROUND + u.z * 1.5; // profundidade espalhada na largura da estradinha
+  const cx = u.x - cam, by = GROUND + u.z * DEPTH; // profundidade espalhada na largura da estradinha
   ctx.fillStyle = 'rgba(30,20,10,0.28)'; // sombra no chão
   ctx.beginPath(); ctx.ellipse(cx, by, def.w * 0.6, 2.2, 0, 0, Math.PI * 2); ctx.fill();
 
@@ -167,7 +173,7 @@ function drawUnit(ctx, g, u, s, cam) {
 
 // capivara derrotada: fica tonta, cai, dorme (zZ) e some
 function drawSleeping(ctx, u, cam) {
-  const t = u.deadT, cx = u.x - cam, by = GROUND + u.z * 1.5;
+  const t = u.deadT, cx = u.x - cam, by = GROUND + u.z * DEPTH;
   ctx.globalAlpha = Math.min(1, (DYING_TIME - t) / 0.4);
   const f = u.def.sprite && frame(u.def.sprite, u.s, 'ko', t < 0.2 ? 0 : t < 0.45 ? 1 : 2);
   const h = draw1(ctx, f, cx, by, false) || 6;
@@ -229,6 +235,86 @@ function drawBase(ctx, g, s, cam, ui) {
       ctx.fillRect(Math.round(fx - 10), y - 18, 20, 18);
     }
   }
+}
+
+// ---------- efeitos (só visual) ----------
+
+// pool fixo: nada é criado durante o jogo; se lotar, recicla a partícula mais velha
+const PMAX = 400, parts = [];
+for (let i = 0; i < PMAX; i++) parts.push({ t: 1, life: 0, x: 0, y: 0, vx: 0, vy: 0, g: 0, size: 1, grow: 0, color: '', kind: 0 });
+let pi = 0, shake = 0;
+const rnd = (a, b) => a + Math.random() * (b - a);
+
+// kind: 0 quadradinho, 1 anel, 2 clarão redondo
+function emit(x, y, vx, vy, life, size, color, grav = 0, grow = 0, kind = 0) {
+  const p = parts[pi];
+  pi = (pi + 1) % PMAX;
+  p.x = x; p.y = y; p.vx = vx; p.vy = vy; p.t = 0; p.life = life;
+  p.size = size; p.color = color; p.g = grav; p.grow = grow; p.kind = kind;
+}
+
+// x, y no mundo; dir = pra onde quem causou estava virado
+export function effect(name, x, y, dir) {
+  switch (name) {
+    case 'hit': // faíscas + um clarãozinho
+      emit(x, y, 0, 0, 0.12, 2, '#fffbe6', 0, 3, 2);
+      for (let i = 0; i < 7; i++) emit(x, y, rnd(-40, 40) + dir * 35, rnd(-70, -15), rnd(0.25, 0.4), rnd(1.5, 2.5), i % 2 ? '#fff6c8' : '#ffd25a', 160);
+      break;
+    case 'die': // nuvem de poeira no chão
+      for (let i = 0; i < 14; i++) emit(x + rnd(-10, 10), y - rnd(0, 4), rnd(-30, 30), rnd(-22, -4), rnd(0.7, 1.1), rnd(1.5, 2.5), i % 2 ? '#d9b98f' : '#b8946c', -4, 3, 2);
+      break;
+    case 'shoot':
+      for (let i = 0; i < 3; i++) emit(x + dir * 6, y, dir * rnd(10, 25), rnd(-10, 0), 0.35, 1, '#efe8dc', 0, 1.5, 2);
+      break;
+    case 'tshoot': // fumaça na boca da torre
+      emit(x + dir * 2, y, 0, 0, 0.1, 2.5, '#fff3c0', 0, 3, 2);
+      for (let i = 0; i < 6; i++) emit(x + dir * 2, y, dir * rnd(20, 45), rnd(-15, 5), rnd(0.35, 0.6), rnd(1, 1.5), '#efe8dc', -10, 2.5, 2);
+      break;
+    case 'boom': // explosão: clarão, anel, destroços e fumaça
+      emit(x, y - 6, 0, 0, 0.3, 6, '#ffe27a', 0, 16, 2);
+      emit(x, y - 6, 0, 0, 0.35, 8, '#fff3c0', 0, 22, 1);
+      for (let i = 0; i < 16; i++) emit(x, y - 3, rnd(-80, 80), rnd(-140, -50), rnd(0.6, 0.9), rnd(2, 3.5), i % 3 ? '#6b4a2a' : '#8a8a8a', 300);
+      for (let i = 0; i < 10; i++) emit(x + rnd(-8, 8), y - rnd(3, 12), rnd(-18, 18), rnd(-24, -8), rnd(0.8, 1.3), rnd(2, 3), i % 2 ? '#a9a39a' : '#8e887f', -6, 5, 2);
+      shake = Math.max(shake, 3);
+      break;
+    case 'thud': // coco do especial batendo no chão
+      for (let i = 0; i < 10; i++) emit(x, y - 1, rnd(-50, 50), rnd(-100, -35), rnd(0.45, 0.7), rnd(2, 3), '#7a5332', 260);
+      for (let i = 0; i < 4; i++) emit(x + rnd(-5, 5), y - 2, rnd(-12, 12), rnd(-12, -3), rnd(0.6, 0.9), 2, '#d9b98f', -4, 3, 2);
+      shake = Math.max(shake, 1.4);
+      break;
+    case 'special':
+      shake = Math.max(shake, 1.5);
+      break;
+    case 'evolve': // brilhos dourados subindo em volta da base
+      for (let i = 0; i < 50; i++) emit(x + rnd(-40, 40), y + rnd(-45, 45), rnd(-10, 10), rnd(-45, -15), rnd(0.9, 1.6), rnd(1.5, 2.5), i % 2 ? '#fff3b0' : '#f2c14e', -10);
+      break;
+  }
+}
+
+function drawParticles(ctx, dt, cam) {
+  for (let i = 0; i < PMAX; i++) {
+    const p = parts[i];
+    if (p.t >= p.life) continue;
+    p.t += dt;
+    p.vy += p.g * dt;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vx *= 1 - 1.5 * dt;
+    const k = 1 - p.t / p.life;
+    if (k <= 0) continue;
+    const sz = p.size + p.grow * (1 - k);
+    ctx.globalAlpha = Math.min(1, k * 1.6);
+    if (p.kind === 1) { // anel
+      ctx.strokeStyle = p.color; ctx.lineWidth = 2.5 * k;
+      ctx.beginPath(); ctx.arc(p.x - cam, p.y, sz, 0, Math.PI * 2); ctx.stroke();
+    } else if (p.kind === 2) { // clarão redondo
+      ctx.fillStyle = p.color;
+      ctx.beginPath(); ctx.arc(p.x - cam, p.y, sz, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - cam - sz / 2, p.y - sz / 2, sz, sz);
+    }
+  }
+  ctx.globalAlpha = 1;
 }
 
 // ---------- interface ----------

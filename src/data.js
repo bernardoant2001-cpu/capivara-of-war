@@ -3,6 +3,7 @@
 export const W = 640, H = 360;     // resolução lógica (a lógica toda roda nela)
 export const RES = 3;              // desenho em 3x: canvas 1920x1080
 export const WORLD = 1280;         // largura do campo de batalha
+export const DEPTH = 1.5;          // quanto cada nível de profundidade desce no chão (px)
 export const GROUND = 298;         // y do chão (começo da estradinha de terra no fundo)
 export const HUD_H = 40;
 export const BASE_W = 64, BASE_H = 96;

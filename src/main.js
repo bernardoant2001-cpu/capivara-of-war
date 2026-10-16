@@ -1,7 +1,7 @@
 import { W, H, RES, WORLD, HUD_H, TURRET_W, TURRET_H, slotY } from './data.js';
 import { newGame, update, train, buyTurret, buySlot, sellTurret, evolve, special } from './battle.js';
 import {
-  draw, drawMenu, ready, BUTTONS, SLOT_BTN, SELL_BTN, TOGGLE_BTN, SPECIAL_BTN, EVOLVE_BTN, MENU_BTNS,
+  draw, drawMenu, ready, effect, BUTTONS, SLOT_BTN, SELL_BTN, TOGGLE_BTN, SPECIAL_BTN, EVOLVE_BTN, MENU_BTNS,
 } from './render.js';
 import * as audio from './audio.js';
 
@@ -156,13 +156,18 @@ function frame(now) {
   if (g && !ui.paused) {
     acc += dt;
     while (acc >= STEP) { tick(STEP); acc -= STEP; }
-    for (const name of g.fx) audio.play(name);
+    for (let i = 0; i < g.fx.length; i += 4) { // nome, x, y, direção
+      const name = g.fx[i];
+      audio.play(name === 'tshoot' ? 'shoot' : name);
+      effect(name, g.fx[i + 1], g.fx[i + 2], g.fx[i + 3]);
+    }
     g.fx.length = 0;
     if (g.winner >= 0 && !ui.saved) saveResult();
   }
   ui.cam = Math.max(0, Math.min(WORLD - W, ui.cam));
   frames++;
   if ((fpsT += dt) >= 1) { ui.fps = frames; frames = 0; fpsT -= 1; }
+  ui.dt = g && !ui.paused ? dt : 0;
   if (g) draw(ctx, g, ui); else drawMenu(ctx, ui);
   requestAnimationFrame(frame);
 }
