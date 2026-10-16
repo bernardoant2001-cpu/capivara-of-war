@@ -37,7 +37,7 @@ Recriação de **Age of War** com capivaras. Jogo de navegador, pixel art no est
 | Ouro por abate | `custo da unidade inimiga × 1.3` |
 | XP por abate | `custo da unidade inimiga × 4` |
 | XP por dano na base inimiga | `dano × 0.5` |
-| Renda passiva | `1 + era` ouro/s (evita travar sem dinheiro; dá pra desligar) |
+| Renda passiva | 1 ouro/s na era 1, ×3 a cada era (evita travar sem dinheiro) |
 
 ### 2.3 Treinamento
 - Fila de no máximo **5 unidades**.
@@ -48,9 +48,9 @@ Recriação de **Age of War** com capivaras. Jogo de navegador, pixel art no est
 | Para a era | XP necessário |
 |---|---|
 | 2 – Medieval | 4.000 |
-| 3 – Navegações | 12.000 |
-| 4 – Moderna | 36.000 |
-| 5 – Futuro | 110.000 |
+| 3 – Navegações | 16.000 |
+| 4 – Moderna | 60.000 |
+| 5 – Futuro | 220.000 |
 
 - O botão "Evoluir" só acende quando há XP suficiente.
 - Ao evoluir: o sprite e o HP máximo da base sobem, e o HP atual sobe pela diferença. A loja de unidades e de torres troca para a nova era.
@@ -108,7 +108,7 @@ Os stats escalam com uma fórmula por era (`k = era - 1`), então tudo fica num 
 | 4 | 400 / 960 / 280 | 675 / 740 / 175 | 2.700 / 5.300 / 700 |
 | 5 | 1.200 / 2.500 / 730 | 2.000 / 1.900 / 460 | 8.100 / 13.700 / 1.830 |
 
-**HP da base por era:** 1.000 / 2.600 / 6.800 / 17.500 / 45.000
+**HP da base por era:** 3.000 / 7.800 / 20.300 / 52.700 / 137.100
 
 > Com essas contas, cada era pede uns 30 abates de unidade média, ou seja, 2 a 4 minutos por era. Os números são ponto de partida e vão ser ajustados jogando.
 
@@ -158,18 +158,19 @@ Cada base tem **3 estados de dano** (100–66%, 66–33%, 33–0%).
 
 A IA é simples, baseada em orçamento e tempo, igual ao original.
 
-| Dificuldade | Multiplicador de renda | Evolui a cada | Máx. unidades em campo |
+| Dificuldade | Multiplicador de renda | Evolui no máximo a cada | Máx. unidades em campo |
 |---|---|---|---|
 | Fácil | 0.7× | 6 min | 8 |
 | Normal | 1.0× | 5 min | 12 |
 | Difícil | 1.4× | 4 min | 16 |
 | Impossível | 2.0× | 3 min | 20 |
 
-- A IA ganha ouro virtual por segundo, mais o ouro dos abates.
+- A IA ganha ouro por segundo e por abate, os dois multiplicados pela dificuldade.
+- Evolui por XP igual o jogador. Se ficar pra trás, evolui pelo tempo da tabela.
 - **Escolha de unidade:** sorteio ponderado (corpo a corpo 50, distância 35, pesada 15).
   - Se o jogador tem mais unidades em campo, sobe o peso da pesada.
   - Se a base dela está abaixo de 30% de HP, gasta tudo de uma vez.
-- Ao evoluir, compra a torre mais cara que conseguir pagar.
+- Depois de 1 min, troca a torre por uma melhor quando sobra ouro.
 - Usa o especial quando há 5 ou mais unidades do jogador na metade dela do campo.
 
 ---
@@ -313,12 +314,12 @@ for (const u of myUnits) {
 - **Pergunta-chave:** já é divertido com quadrados? Se não for, mexer nos números antes de desenhar qualquer coisa.
 
 ### M1 - Jogo completo em quadrados
-- [ ] `data.js` com as 5 eras, XP e evolução
-- [ ] Fila de treino com 5 vagas
+- [x] `data.js` com as 5 eras, XP e evolução
+- [x] Fila de treino com 5 vagas
 - [x] Torres e slots, compra e venda (era 1)
-- [ ] Especiais
-- [ ] IA com dificuldades
-- [ ] Vitória/derrota e recordes
+- [x] Especiais (por enquanto todos são chuva; o visual de cada um vem no M3)
+- [x] IA com dificuldades
+- [x] Vitória/derrota e recordes
 - [ ] Balanceamento: dá pra jogar do começo ao fim
 
 ### M2 - Arte e som da era 1
