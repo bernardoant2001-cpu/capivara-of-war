@@ -18,15 +18,17 @@ Recriação de **Age of War** com capivaras. Jogo de navegador, pixel art no est
 
 ### 2.1 Pista e combate
 - Um único caminho horizontal. A base do jogador fica à esquerda e a do inimigo à direita.
-- Cada lado tem uma fila de unidades ordenada pela posição (a primeira da lista é a da frente).
-- Regras por tick, para cada unidade:
-  1. Se existe inimigo (unidade da frente ou base) **dentro do alcance**, ela ataca.
-  2. Senão, se tem aliado colado na frente (distância menor que o espaçamento), ela para em idle.
-  3. Senão, anda.
-- **Corpo a corpo:** na prática só a unidade da frente luta. As de trás ficam esperando.
-- **Distância:** atira por cima dos aliados, mirando a unidade inimiga da frente.
+- **Briga em bando** (diferente do original): aliado não bloqueia aliado.
+  - Cada unidade anda até a unidade inimiga mais avançada ficar no seu alcance e aí ataca.
+  - Cada uma para num ponto sorteado dentro do próprio alcance e numa profundidade sorteada no chão, então o grupo vira um bolo e todo mundo bate junto.
+  - Quem ficar sozinho apanha de vários ao mesmo tempo.
+- **Distância:** formação, não fila.
+  - Nunca passa do corpo a corpo mais avançado do próprio time e fica uma distância sorteada atrás dele.
+  - Se saiu da base antes, segura a posição até o corpo a corpo passar.
+  - Atira por cima de todo mundo, inclusive andando ou esperando.
+  - Sem nenhum corpo a corpo em campo, vai sozinho até o próprio alcance.
 - **Pesadas de era 3+:** dano em área (splash) num raio pequeno.
-- Não precisa de motor de física. A colisão é só comparar o `x` com a unidade da frente, em O(n).
+- Não precisa de motor de física. O alvo é só a unidade inimiga mais avançada, em O(n).
 
 ### 2.2 Economia
 | Item | Valor |
@@ -313,7 +315,7 @@ for (const u of myUnits) {
 ### M1 - Jogo completo em quadrados
 - [ ] `data.js` com as 5 eras, XP e evolução
 - [ ] Fila de treino com 5 vagas
-- [ ] Torres e slots, compra e venda
+- [x] Torres e slots, compra e venda (era 1)
 - [ ] Especiais
 - [ ] IA com dificuldades
 - [ ] Vitória/derrota e recordes

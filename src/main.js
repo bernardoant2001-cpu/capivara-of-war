@@ -1,6 +1,6 @@
-import { W, H, WORLD, HUD_H } from './data.js';
-import { newGame, update, train } from './battle.js';
-import { draw, BUTTONS } from './render.js';
+import { W, H, WORLD, HUD_H, TURRET_W, TURRET_H, slotY } from './data.js';
+import { newGame, update, train, buyTurret, buySlot, sellTurret } from './battle.js';
+import { draw, BUTTONS, SLOT_BTN, SELL_BTN, TOGGLE_BTN } from './render.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -18,7 +18,7 @@ addEventListener('resize', fit);
 fit();
 
 let g = newGame();
-const ui = { cam: 0, paused: false, showFps: false, fps: 0 };
+const ui = { cam: 0, paused: false, showFps: false, fps: 0, towers: false, selling: false, hover: -1 };
 const keys = new Set();
 let mouseX = -1, mouseY = -1, dragX = null;
 
@@ -26,25 +26,49 @@ const toGame = (e) => {
   const r = canvas.getBoundingClientRect();
   return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height];
 };
-const restart = () => { g = newGame(); ui.cam = 0; ui.paused = false; };
+const inside = (b, x, y) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
+const restart = () => { g = newGame(); ui.cam = 0; ui.paused = false; ui.selling = false; };
+const pick = (i) => (ui.towers ? buyTurret(g, 0, i) : train(g, 0, i));
+const toggleTowers = () => { ui.towers = !ui.towers; ui.selling = false; };
+
+// vaga de torre do jogador embaixo do ponto (x,y da tela), ou -1
+function slotAt(x, y) {
+  const b = g.sides[0].base, fx = b.x + b.w / 2, wx = x + ui.cam;
+  if (Math.abs(wx - fx) > TURRET_W / 2 + 4) return -1;
+  for (let i = 0; i < g.sides[0].slots.length; i++) if (y >= slotY(i) - 2 && y < slotY(i) + TURRET_H + 2) return i;
+  return -1;
+}
 
 canvas.addEventListener('pointerdown', (e) => {
   const [x, y] = toGame(e);
   if (g.winner >= 0) return restart();
-  const i = BUTTONS.findIndex((b) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h);
-  if (i >= 0) train(g, 0, i);
-  else if (y > HUD_H) { dragX = x; canvas.setPointerCapture(e.pointerId); }
+  if (inside(TOGGLE_BTN, x, y)) return toggleTowers();
+  const i = BUTTONS.findIndex((b) => inside(b, x, y));
+  if (i >= 0) return pick(i);
+  if (ui.towers && inside(SLOT_BTN, x, y)) return buySlot(g, 0);
+  if (ui.towers && inside(SELL_BTN, x, y)) { ui.selling = !ui.selling; return; }
+  if (ui.selling) {
+    const k = slotAt(x, y);
+    if (k >= 0) sellTurret(g, 0, k);
+    ui.selling = false;
+    return;
+  }
+  if (y > HUD_H) { dragX = x; canvas.setPointerCapture(e.pointerId); }
 });
 canvas.addEventListener('pointermove', (e) => {
   [mouseX, mouseY] = toGame(e);
+  ui.hover = BUTTONS.findIndex((b) => inside(b, mouseX, mouseY));
   if (dragX !== null) { ui.cam -= mouseX - dragX; dragX = mouseX; }
 });
 canvas.addEventListener('pointerup', (e) => { dragX = null; if (e.pointerType !== 'mouse') mouseX = -1; });
-canvas.addEventListener('pointerleave', () => { mouseX = -1; });
+canvas.addEventListener('pointerleave', () => { mouseX = -1; ui.hover = -1; });
 
 addEventListener('keydown', (e) => {
   keys.add(e.code);
-  if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') train(g, 0, +e.code.at(-1) - 1);
+  if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') pick(+e.code.at(-1) - 1);
+  else if (e.code === 'Digit4' && ui.towers) buySlot(g, 0);
+  else if (e.code === 'KeyT') toggleTowers();
+  else if (e.code === 'Escape' && ui.selling) ui.selling = false;
   else if ((e.code === 'KeyP' || e.code === 'Escape') && g.winner < 0) ui.paused = !ui.paused;
   else if (e.code === 'Enter' && g.winner >= 0) restart();
   else if (e.code === 'F3') { ui.showFps = !ui.showFps; e.preventDefault(); }
