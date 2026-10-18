@@ -4,6 +4,8 @@ Age of War, só que com capivaras.
 
 **Jogar:** https://bernardoant2001-cpu.github.io/capivara-of-war/
 
+Também no itch.io: https://nadinh0.itch.io/capivara-of-war
+
 ## Rodar local
 
 ```
