@@ -1,9 +1,10 @@
 import {
-  W, H, RES, WORLD, GROUND, DEPTH, HUD_H, QUEUE_MAX, ERAS, XP_TO_EVOLVE, DROP_FALL, DIFFICULTIES, SPECIAL_CD,
+  W, H, RES, WORLD, GROUND, DEPTH, HUD_H, QUEUE_MAX, ERAS, XP_TO_EVOLVE, DROP_FALL, DIFFICULTIES, SPECIAL_CD, SECRET_ERA,
   MAX_SLOTS, SLOT_COSTS, TURRET_W, TURRET_H, slotY,
 } from './data.js';
 import { ATTACK, WALK, canEvolve, DYING_TIME } from './battle.js';
-import { t, nm, getLang } from './i18n.js';
+import { t, nm, getLang, achText } from './i18n.js';
+import { ACHIEVEMENTS } from './achievements.js';
 
 // Sprites: um atlas por era que já tem arte + versão branca de cada um pro piscar de dano.
 const atlases = [], whites = [], bgs = [];
@@ -68,7 +69,7 @@ const COLORS = [
   ['#4c7bd9', '#7fb2f0', '#4a4fae', '#8a4cff'], // Clã do Pântano
 ];
 const TURRET_COLORS = ['#a89a7c', '#c9a14a', '#77706a'];
-const ERA_COLORS = ['#5a3d1e', '#b8bec8', '#2f6e3a', '#6b7a2f', '#3ff0ff']; // faixa na cabeça
+const ERA_COLORS = ['#5a3d1e', '#b8bec8', '#2f6e3a', '#6b7a2f', '#3ff0ff', '#c04cff']; // faixa na cabeça
 
 export const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
@@ -81,7 +82,11 @@ export const SPECIAL_BTN = { x: 434, y: 5, w: 66, h: 30 };
 export const EVOLVE_BTN = { x: 503, y: 5, w: 66, h: 30 };
 export const TOGGLE_BTN = { x: 572, y: 5, w: 63, h: 30 };
 export const MENU_BTNS = DIFFICULTIES.map((_, i) => ({ x: W / 2 - 85, y: 122 + i * 33, w: 170, h: 27 }));
-export const LANG_BTN = { x: W / 2 - 55, y: 260, w: 110, h: 15 };
+export const MODE_BTN = { x: 132, y: 263, w: 120, h: 15 };
+export const ACH_BTN = { x: 260, y: 263, w: 120, h: 15 };
+export const LANG_BTN = { x: 388, y: 263, w: 120, h: 15 };
+export const BACK_BTN = { x: W / 2 - 55, y: 338, w: 110, h: 14 };
+const ACH_CELL = (i) => ({ x: 18 + (i % 3) * 204, y: 40 + Math.floor(i / 3) * 59, w: 196, h: 52 });
 export const LANG_PICK = [{ x: W / 2 - 150, y: 140, w: 140, h: 46 }, { x: W / 2 + 10, y: 140, w: 140, h: 46 }];
 
 // fundo: a imagem cobre o campo inteiro (WORLD), por frame é só 1 drawImage
@@ -138,7 +143,7 @@ export function draw(ctx, g, ui) {
 }
 
 // altura do arco do tiro por era: pedra/flecha/bala de canhão sobem, bala e laser vão quase retos
-const ARC = [18, 22, 16, 4, 0];
+const ARC = [18, 22, 16, 4, 0, 0];
 
 // projétil de unidade ou torre, com cara de cada era
 function projectile(ctx, x, y, era, splash, dir, slope) {
@@ -153,11 +158,11 @@ function projectile(ctx, x, y, era, splash, dir, slope) {
     ctx.fillStyle = '#d8d8d8'; ctx.fillRect(x - 1, y - 1, 2, 2);
     return;
   }
-  if (splash) return ball(ctx, x, y, 2.6, era === 4 ? '#7ff6ff' : '#4a5a2a'); // foguete / bola de energia
-  ctx.strokeStyle = era === 3 ? '#ffd84a' : '#5ff0ff'; // bala tracejante / laser
+  if (splash) return ball(ctx, x, y, 2.6, era === 3 ? '#4a5a2a' : era === 4 ? '#7ff6ff' : '#ff9cf0'); // foguete / bola de energia / plasma
+  ctx.strokeStyle = era === 3 ? '#ffd84a' : era === 4 ? '#5ff0ff' : '#ff6ad5'; // bala tracejante / laser / plasma
   ctx.lineWidth = era === 3 ? 1.4 : 2.2;
   ctx.beginPath(); ctx.moveTo(x - dx, y - dy); ctx.lineTo(x, y); ctx.stroke();
-  if (era === 4) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.8; ctx.stroke(); }
+  if (era >= 4) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.8; ctx.stroke(); }
 }
 
 // o que cai do céu no especial de cada era
@@ -175,6 +180,11 @@ function drop(ctx, x, y, era) {
     ball(ctx, x, y, 3, '#4a5a2a');
     ctx.fillStyle = '#2a3018'; ctx.fillRect(x - 2.5, y - 6, 5, 2);
     return;
+  }
+  if (era === 5) { // meteoro com rastro de fogo
+    ctx.fillStyle = 'rgba(255,140,40,0.45)'; ctx.fillRect(x - 2, y - 16, 4, 14);
+    ctx.fillStyle = 'rgba(255,220,120,0.7)'; ctx.fillRect(x - 1, y - 10, 2, 9);
+    return ball(ctx, x, y, 3.2, '#7a4a3a');
   }
   // raio da laranja sagrada: coluna de luz descendo
   ctx.fillStyle = 'rgba(255,190,80,0.35)'; ctx.fillRect(x - 3, HUD_H, 6, y - HUD_H);
@@ -594,7 +604,8 @@ function drawHud(ctx, g, ui) {
   const ready = me.specialT <= 0, can = canEvolve(me);
   action(ctx, SPECIAL_BTN, 'special', t('special'), ready ? t('spaceKey') : `${Math.ceil(me.specialT)}s`,
     ready ? 'hot' : 'off', inside(SPECIAL_BTN, mx, my), ready ? 1 : 1 - me.specialT / SPECIAL_CD, ready);
-  action(ctx, EVOLVE_BTN, 'evolve', t('evolve'), !next ? t('maxEra') : can ? t('ready') : `${Math.floor(100 * frac)}%`,
+  const hidden = me.era + 1 === SECRET_ERA; // do Futuro em diante ninguém sabe o que vem
+  action(ctx, EVOLVE_BTN, 'evolve', t('evolve'), !next ? t('maxEra') : can ? (hidden ? 'E: ???' : t('ready')) : hidden ? t('secret') : `${Math.floor(100 * frac)}%`,
     can ? 'go' : 'off', inside(EVOLVE_BTN, mx, my), !next || can ? 1 : frac, can);
   action(ctx, TOGGLE_BTN, ui.towers ? 'unit' : 'turret', ui.towers ? t('units') : t('turrets'), 'T', 'wood', inside(TOGGLE_BTN, mx, my), 1, false);
 
@@ -616,27 +627,46 @@ function drawHud(ctx, g, ui) {
 
   // plaquinha da era e do tempo, no canto direito
   ctx.font = font(8);
-  const label = `${nm(era)}  ·  ${fmt(g.time)}`, lw = ctx.measureText(label).width + 12;
+  const label = g.mode === 'endless' ? `${t('wave')} ${g.wave}  ·  ${nm(era)}` : `${nm(era)}  ·  ${fmt(g.time)}`, lw = ctx.measureText(label).width + 12;
   const ex = W - 5 - lw, ey = HUD_H + 1;
   panel(ctx, ex, ey, lw, 14, '#5a3820', '#83562f', '#3a2212');
   text(ctx, label, ex + lw / 2, ey + 2, 8, '#fff4dc', 'center', true, OUT);
   if (ui.muted) icon(ctx, 'mute', ex - 11, ey + 7, 13);
   if (ui.showFps) text(ctx, `${ui.fps} fps`, W - 6, ey + 18, 7, '#fff', 'right', false, OUT);
+  if (g.mode === 'endless' && !g.waveOn && g.winner < 0) {
+    text(ctx, `${t('nextWave')} ${Math.max(0, Math.ceil(g.waveT))}s`, W - 6, ey + 18, 8, '#ffe9a8', 'right', false, OUT);
+  }
+  if (g.mode === 'endless' && g.bannerT > 0 && g.winner < 0) { // aviso grande de onda
+    ctx.globalAlpha = Math.min(1, g.bannerT / 0.4);
+    const title = g.bannerDone ? t('waveDone') : `${t('wave')} ${g.wave}`;
+    text(ctx, title, W / 2, 112, 20, g.bannerDone ? '#a8f07a' : '#f8d878', 'center', true, OUT);
+    if (g.bannerDone) { icon(ctx, 'coin', W / 2 - 20, 150, 12); text(ctx, `+${g.bonus}`, W / 2 - 12, 143, 11, '#f8d878', 'left', true, OUT); }
+    ctx.globalAlpha = 1;
+  }
 
-  if (g.winner >= 0) {
+  if (g.winner >= 0 && g.mode === 'endless') {
+    board(ctx, t('gameOver'), '#ff8a7a', 270, 128, (x, y, w) => {
+      const row = y + 46;
+      statLine(ctx, x + w / 2, row, [['time', fmt(g.time)], ['kills', `${me.kills} ${t('kills')}`], ['evolve', `${t('wave')} ${g.wave}`]]);
+      text(ctx, nm(DIFFICULTIES[g.diff]), x + w / 2, y + 30, 8, '#e8d2ad', 'center', false, OUT);
+      if (ui.newRecord) text(ctx, t('record'), x + w / 2, row + 20, 10, '#f8d878', 'center', true, OUT);
+      text(ctx, t('backMenu'), x + w / 2, y + 128 - 20, 7.5, '#e8d2ad', 'center', false, OUT);
+    });
+  } else if (g.winner >= 0) {
     const win = g.winner === 0;
     board(ctx, win ? t('win') : t('lose'), win ? '#f8d878' : '#ff8a7a', 270, 128, (x, y, w) => {
       const row = y + 46;
       statLine(ctx, x + w / 2, row, [['time', fmt(g.time)], ['kills', `${me.kills} ${t('kills')}`], ['evolve', nm(era)]]);
       text(ctx, nm(DIFFICULTIES[g.diff]), x + w / 2, y + 30, 8, '#e8d2ad', 'center', false, OUT);
       if (ui.newRecord) text(ctx, t('record'), x + w / 2, row + 20, 10, '#f8d878', 'center', true, OUT);
-      text(ctx, t('back'), x + w / 2, y + 128 - 20, 7.5, '#e8d2ad', 'center', false, OUT);
+      text(ctx, t('backMenu'), x + w / 2, y + 128 - 20, 7.5, '#e8d2ad', 'center', false, OUT);
     });
   } else if (ui.paused) {
     board(ctx, t('paused'), '#fff4dc', 220, 76, (x, y, w) => {
       text(ctx, t('resume'), x + w / 2, y + 46, 8, '#e8d2ad', 'center', false, OUT);
     });
   }
+  drawToasts(ctx, ui);
   ctx.textAlign = 'left';
 }
 
@@ -692,15 +722,19 @@ export function drawMenu(ctx, ui) {
   mascots(ctx);
   text(ctx, t('pick'), W / 2, 104, 9, '#f3e6cc', 'center', false, OUT);
   MENU_BTNS.forEach((b, i) => {
-    const r = ui.records[i], hover = inside(b, ui.mx, ui.my), c = hover ? TONES.wood[1] : TONES.wood[0];
+    const r = (ui.mode === 'endless' ? ui.waves : ui.records)[i], hover = inside(b, ui.mx, ui.my), c = hover ? TONES.wood[1] : TONES.wood[0];
     panel(ctx, b.x, b.y, b.w, b.h, c, TONES.wood[1], TONES.wood[2]);
     nail(ctx, b.x + 4, b.y + b.h / 2); nail(ctx, b.x + b.w - 4, b.y + b.h / 2);
     text(ctx, `${i + 1}`, b.x + 14, b.y + 5, 11, '#f8d878', 'center', true, OUT);
     text(ctx, nm(DIFFICULTIES[i]), b.x + 26, b.y + 3, 9, '#fff4dc', 'left', true, OUT);
-    if (r) { icon(ctx, 'time', b.x + 30, b.y + 19, 8); text(ctx, `${t('best')} ${fmt(r)}`, b.x + 36, b.y + 14.5, 7, '#ffe9a8', 'left', false, OUT); }
-    else text(ctx, t('noWin'), b.x + 26, b.y + 14.5, 7, '#e8d2ad', 'left', false, OUT);
+    if (r && ui.mode === 'endless') { icon(ctx, 'evolve', b.x + 30, b.y + 19, 8); text(ctx, `${t('bestWave')} ${r}`, b.x + 36, b.y + 14.5, 7, '#ffe9a8', 'left', false, OUT); }
+    else if (r) { icon(ctx, 'time', b.x + 30, b.y + 19, 8); text(ctx, `${t('best')} ${fmt(r)}`, b.x + 36, b.y + 14.5, 7, '#ffe9a8', 'left', false, OUT); }
+    else text(ctx, ui.mode === 'endless' ? t('noWave') : t('noWin'), b.x + 26, b.y + 14.5, 7, '#e8d2ad', 'left', false, OUT);
   });
+  plank(ctx, MODE_BTN, ui.mode === 'endless' ? t('endless') : t('classic'), ui.mode === 'endless' ? 'hot' : 'wood', inside(MODE_BTN, ui.mx, ui.my));
+  plank(ctx, ACH_BTN, `${t('achievements')} ${ui.got.size}/${ACHIEVEMENTS.length}`, 'wood', inside(ACH_BTN, ui.mx, ui.my));
   plank(ctx, LANG_BTN, t('lang'), 'wood', inside(LANG_BTN, ui.mx, ui.my));
+  drawToasts(ctx, ui);
   text(ctx, t('help'), W / 2, H - 16, 7, '#f3e6cc', 'center', false, OUT);
   if (ui.showFps) text(ctx, `${ui.fps} fps`, W - 6, 6, 7, '#fff', 'right', false, OUT);
   ctx.textAlign = 'left';
@@ -722,4 +756,44 @@ export function drawLangPick(ctx, ui) {
     text(ctx, i ? 'press 2' : 'aperte 1', b.x + b.w / 2, b.y + 30, 7.5, '#ffe9a8', 'center', false, OUT);
   });
   ctx.textAlign = 'left';
+}
+
+export function drawAchievements(ctx, ui) {
+  menuBackdrop(ctx);
+  ctx.fillStyle = 'rgba(15,8,4,0.35)'; ctx.fillRect(0, 0, W, H);
+  text(ctx, `${t('achTitle')}  ${ui.got.size}/${ACHIEVEMENTS.length}`, W / 2, 8, 15, '#f8d878', 'center', true, OUT);
+  ACHIEVEMENTS.forEach((a, i) => {
+    const b = ACH_CELL(i), on = ui.got.has(a.id), [name, desc] = achText(a), hide = a.secret && !on;
+    panel(ctx, b.x, b.y, b.w, b.h, on ? '#9d6c3e' : '#5a4636', on ? '#d7a46c' : '#7a6452', on ? '#64401f' : '#3a2c22');
+    inset(ctx, b.x + 5, b.y + 6, 38, 38, on ? '#5b3a1f' : '#2a1d14');
+    if (hide) text(ctx, '?', b.x + 24, b.y + 11, 18, '#7a6452', 'center', true, OUT);
+    else icon(ctx, a.icon, b.x + 24, b.y + 25, 30, on ? 1 : 0.3);
+    text(ctx, hide ? t('secret') : name, b.x + 49, b.y + 8, 9, on ? '#fff4dc' : '#b8a48c', 'left', true, OUT, b.w - 54);
+    text(ctx, hide ? t('secret') : desc, b.x + 49, b.y + 26, 7, on ? '#ffe9a8' : '#9a8670', 'left', false, OUT, b.w - 54);
+    if (on) { // selo de conquistado
+      ctx.fillStyle = '#5bd15b'; ctx.beginPath(); ctx.arc(b.x + b.w - 9, b.y + 9, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = OUT; ctx.lineWidth = 2 * P; ctx.stroke();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.4; ctx.beginPath();
+      ctx.moveTo(b.x + b.w - 11.5, b.y + 9); ctx.lineTo(b.x + b.w - 9.5, b.y + 11); ctx.lineTo(b.x + b.w - 6.5, b.y + 7); ctx.stroke();
+    }
+  });
+  plank(ctx, BACK_BTN, t('back'), 'wood', inside(BACK_BTN, ui.mx, ui.my));
+  drawToasts(ctx, ui);
+  ctx.textAlign = 'left';
+}
+
+// avisos de conquista: deslizam do topo, ficam uns segundos e somem
+function drawToasts(ctx, ui) {
+  ui.toasts.forEach((tt, i) => {
+    const a = ACHIEVEMENTS.find((x) => x.id === tt.id), [name] = achText(a);
+    const y = 46 + i * 34 - (1 - Math.min(1, (4 - tt.t) / 0.3)) * 20; // entra deslizando de cima
+    ctx.globalAlpha = Math.max(0, Math.min(1, tt.t / 0.4));
+    const w = 190, x = W / 2 - w / 2;
+    panel(ctx, x, y, w, 28, '#6a4325', '#9a6a3c', '#3f2615');
+    inset(ctx, x + 4, y + 4, 20, 20, '#5b3a1f');
+    icon(ctx, a.icon, x + 14, y + 14, 16);
+    text(ctx, t('achGot'), x + 29, y + 3, 7, '#f8d878', 'left', true, OUT);
+    text(ctx, name, x + 29, y + 13, 9, '#fff4dc', 'left', true, OUT, w - 34);
+    ctx.globalAlpha = 1;
+  });
 }

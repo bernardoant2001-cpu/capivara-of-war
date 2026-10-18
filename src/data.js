@@ -18,7 +18,8 @@ export const KILL_GOLD = 1.3;      // × custo do abatido
 export const KILL_XP = 4;          // × custo do abatido
 export const BASE_XP = 0.5;        // × dano causado na base
 export const SHOT_SPEED = 220;     // px/s
-export const XP_TO_EVOLVE = [4000, 16000, 60000, 220000]; // XP total pra chegar na era 2, 3, 4 e 5
+export const XP_TO_EVOLVE = [4000, 16000, 60000, 220000, 800000]; // XP total pra chegar na era 2, 3, 4, 5 e na secreta
+export const SECRET_ERA = 5; // a 6ª era só aparece pra quem junta muito XP no Futuro
 export const SPECIAL_CD = 60;      // s
 export const DROP_FALL = 0.8;      // s que cada coco/flecha leva caindo
 
@@ -78,6 +79,11 @@ const ERA_INFO = [
     en: { name: 'Future', units: ['Saber', 'Blaster', 'Capymech'], turrets: ['Laser', 'Titanium', 'Ion Cannon'], special: 'Holy Orange' },
     sprites: { units: ['sabre', 'blaster', 'capimecha', 'suprema'], turrets: ['t_laser', 't_titanio', 't_ion'], base: 'cidadela' },
   },
+  {
+    name: 'Era Cósmica', units: ['Astronauta', 'Jetpack', 'Capidisco'], turrets: ['Plasma', 'Meteoro', 'Vórtice'], special: 'Chuva de Meteoros',
+    en: { name: 'Cosmic Age', units: ['Astronaut', 'Jetpack', 'Capysaucer'], turrets: ['Plasma', 'Meteor', 'Vortex'], special: 'Meteor Shower' },
+    sprites: { units: ['astronauta', 'jetpack', 'capidisco'], turrets: ['t_plasma', 't_meteoro', 't_vortice'], base: 'estacao' },
+  },
 ];
 
 const nice = (x) => (x < 100 ? Math.round(x) : Math.round(x / 5) * 5);
@@ -92,7 +98,7 @@ export const ERAS = ERA_INFO.map((info, k) => {
     if (u.ranged) u.range = Math.round(u.range * 1.1 ** k);
     return u;
   });
-  if (k === ERA_INFO.length - 1) units.push({ ...SUPREMA, sprite: info.sprites?.units[3], type: 3, era: k });
+  if (k === SECRET_ERA - 1) units.push({ ...SUPREMA, sprite: info.sprites?.units[3], type: 3, era: k });
   return {
     name: info.name,
     en: info.en.name,

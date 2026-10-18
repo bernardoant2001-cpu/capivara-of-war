@@ -18,6 +18,12 @@ Publicar no itch.io (precisa do [butler](https://itch.io/docs/butler/) logado): 
 
 Atalhos pra testar: `?era=2` começa os dois lados na era 2, `?ouro=5000` começa com 5000 de ouro (dá pra juntar: `?era=3&ouro=9000`).
 
+## Modos
+
+- **Clássico:** derrube a base do clã rival atravessando as eras.
+- **Infinito:** aguente o máximo de ondas que conseguir; a cada 4 ondas o inimigo sobe de era.
+- **Conquistas:** 15 pra desbloquear, salvas no navegador.
+
 ## Controles
 
 - `1` `2` `3` `4` treinam unidades (o `4` só na última era)
@@ -26,5 +32,6 @@ Atalhos pra testar: `?era=2` começa os dois lados na era 2, `?ouro=5000` começ
 - `Espaço` solta o especial
 - `←` `→` / `A` `D` / arrastar movem a câmera
 - `M` liga e desliga o som
+- No menu: `I` troca o modo, `C` abre as conquistas, `L` troca o idioma
 - `P` / `Esc` pausa
 - `F3` mostra o fps

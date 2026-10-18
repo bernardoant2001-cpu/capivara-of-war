@@ -10,25 +10,33 @@ const TEXT = {
     special: 'Especial', spaceKey: 'Espaço', evolve: 'Evoluir', maxEra: 'era máx', ready: 'E: pronto!',
     units: 'Unidades', turrets: 'Torres', slotsFull: 'Vagas 4/4', slot: '+Vaga', sellPick: 'Clica na torre', sell: 'Vender',
     muted: 'som desligado (M)', win: 'VITÓRIA!', lose: 'DERROTA...', kills: 'abates', record: 'NOVO RECORDE!',
-    back: 'clique ou Enter pra voltar ao menu', paused: 'PAUSADO', resume: 'P ou Esc pra continuar',
+    backMenu: 'clique ou Enter pra voltar ao menu', paused: 'PAUSADO', resume: 'P ou Esc pra continuar',
     pick: 'escolha a dificuldade', best: 'recorde', noWin: 'sem vitória ainda',
-    help: 'M: som  ·  T: torres  ·  E: evoluir  ·  Espaço: especial  ·  L: idioma',
+    help: 'I: modo  ·  C: conquistas  ·  L: idioma  ·  M: som',
     lang: 'Idioma: Português',
+    classic: 'Modo: Clássico', endless: 'Modo: Infinito', achievements: 'Conquistas', achTitle: 'CONQUISTAS', back: 'Voltar (Esc)',
+    wave: 'Onda', waveDone: 'Onda vencida!', nextWave: 'próxima onda em', bestWave: 'melhor onda', noWave: 'nenhuma onda ainda', gameOver: 'FIM DE JOGO',
+    achGot: 'Conquista!', secret: '???',
   },
   en: {
     special: 'Special', spaceKey: 'Space', evolve: 'Evolve', maxEra: 'max era', ready: 'E: ready!',
     units: 'Units', turrets: 'Turrets', slotsFull: 'Slots 4/4', slot: '+Slot', sellPick: 'Click a turret', sell: 'Sell',
     muted: 'sound off (M)', win: 'VICTORY!', lose: 'DEFEAT...', kills: 'kills', record: 'NEW RECORD!',
-    back: 'click or Enter to go back to the menu', paused: 'PAUSED', resume: 'P or Esc to resume',
+    backMenu: 'click or Enter to go back to the menu', paused: 'PAUSED', resume: 'P or Esc to resume',
     pick: 'choose the difficulty', best: 'best', noWin: 'no win yet',
-    help: 'M: sound  ·  T: turrets  ·  E: evolve  ·  Space: special  ·  L: language',
+    help: 'I: mode  ·  C: achievements  ·  L: language  ·  M: sound',
     lang: 'Language: English',
+    classic: 'Mode: Classic', endless: 'Mode: Endless', achievements: 'Achievements', achTitle: 'ACHIEVEMENTS', back: 'Back (Esc)',
+    wave: 'Wave', waveDone: 'Wave cleared!', nextWave: 'next wave in', bestWave: 'best wave', noWave: 'no waves yet', gameOver: 'GAME OVER',
+    achGot: 'Achievement!', secret: '???',
   },
 };
 
 export const t = (k) => TEXT[lang][k];
 // nome de era, unidade, torre, especial ou dificuldade no idioma atual
 export const nm = (o) => (lang === 'en' && o.en) || o.name;
+// texto de conquista: [nome, descrição] no idioma atual
+export const achText = (a) => a[lang];
 
 export const getLang = () => lang;
 export const toggleLang = () => setLang(lang === 'pt' ? 'en' : 'pt');

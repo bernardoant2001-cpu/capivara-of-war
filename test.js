@@ -1,9 +1,10 @@
 // roda com: node test.js
 import assert from 'node:assert';
 import {
-  newGame, update, train, buyTurret, buySlot, sellTurret, evolve, special, canEvolve, ATTACK,
+  newGame, update, train, buyTurret, buySlot, sellTurret, evolve, special, canEvolve, waveUnits, ATTACK,
 } from './src/battle.js';
-import { ERAS, KILL_GOLD, INCOME, XP_TO_EVOLVE, SPECIAL_CD, DIFFICULTIES } from './src/data.js';
+import { ACHIEVEMENTS, check } from './src/achievements.js';
+import { ERAS, KILL_GOLD, INCOME, XP_TO_EVOLVE, SPECIAL_CD, DIFFICULTIES, SECRET_ERA } from './src/data.js';
 
 const UNITS = ERAS[0].units, TURRETS = ERAS[0].turrets;
 const run = (g, secs) => { for (let i = 0; i < secs * 60; i++) update(g, 1 / 60); };
@@ -126,9 +127,43 @@ const game = () => newGame(1, false);
   assert.equal(me.queue[0], ERAS[1].units[0]);
   assert.ok(!train(g, 0, 3), 'Suprema antes da era 5');
   me.xp = 1e9;
-  while (evolve(g, 0));
-  assert.equal(me.era, 4);
+  while (me.era < 4) evolve(g, 0);
   assert.ok(train(g, 0, 3), 'sem Suprema na era 5');
+  // a IA não passa do Futuro sozinha; a era secreta só abre depois do jogador
+  const foe = g.sides[1];
+  while (evolve(g, 1, true));
+  assert.equal(foe.era, 4, 'IA entrou na era secreta antes do jogador');
+  assert.ok(evolve(g, 0), 'jogador não chegou na era secreta');
+  assert.equal(me.era, SECRET_ERA);
+  assert.ok(!canEvolve(me), 'tem era depois da secreta');
+  assert.ok(evolve(g, 1, true), 'IA não acompanhou o jogador na era secreta');
+}
+
+// Modo infinito: a base inimiga não cai, as ondas vêm e crescem, onda vencida dá bônus.
+{
+  const g = newGame(1, true, 'endless'), me = g.sides[0], foe = g.sides[1];
+  assert.equal(g.wave, 0);
+  run(g, 9);
+  assert.equal(g.wave, 1);
+  assert.ok(g.waveOn && g.pending.length + foe.queue.length > 0);
+  // 6 estilingues aguentam a onda 1 sozinhos
+  me.gold = 1e6;
+  for (let t = 0; t < 120 && g.wave < 2; t++) { if (me.units.length < 6) train(g, 0, 1); run(g, 1); }
+  assert.ok(g.wave >= 2, 'não passou da onda 1');
+  assert.ok(g.bonus > 0, 'onda vencida sem bônus');
+  // atacar a base inimiga não adianta
+  foe.base.hp = 1;
+  run(g, 30);
+  assert.ok(g.winner !== 0, 'base inimiga caiu no infinito');
+  assert.ok(waveUnits(g, 20).length > waveUnits(g, 1).length, 'ondas não crescem');
+  assert.ok(waveUnits(g, 10)[0].hp > ERAS[foe.era].units[0].hp, 'ondas não ficam mais fortes');
+}
+
+// Infinito sem defesa: o jogador perde em algum momento.
+{
+  const g = newGame(1, true, 'endless');
+  run(g, 900);
+  assert.equal(g.winner, 1);
 }
 
 // Especial: mira nos inimigos andando e derruba pelo menos metade (não precisa ser todo mundo).
@@ -169,6 +204,20 @@ for (const era of ERAS) {
   assert.ok(g.sides[1].era >= 1 || g.winner === 1, 'IA não evoluiu');
   run(g, 900);
   assert.equal(g.winner, 1);
+}
+
+// Conquistas: vitória limpa no Impossível pega várias de uma vez; já conquistada não repete.
+{
+  const g = newGame(3, false);
+  g.winner = 0; g.time = 300;
+  const got = new Set(check(g, new Set(), 10));
+  for (const id of ['win', 'hard', 'impossible', 'speed', 'nospecial', 'noturret', 'untouched']) assert.ok(got.has(id), 'faltou ' + id);
+  assert.ok(!got.has('nap') && !got.has('future') && !got.has('wave10'));
+  assert.equal(check(g, got, 10).length, 0, 'conquista repetida');
+  assert.ok(check(g, got, 500).includes('nap'));
+  g.stats.specials = 1;
+  assert.ok(!check(g, new Set(), 0).includes('nospecial'));
+  for (const a of ACHIEVEMENTS) for (const l of ['pt', 'en']) assert.ok(a[l][1].length <= 30, 'descrição grande: ' + a[l][1]);
 }
 
 console.log('ok');

@@ -2,7 +2,7 @@
 import {
   WORLD, GROUND, DEPTH, BASE_W, SPACING, HOLD_DIST, QUEUE_MAX, MAX_UNITS, START_GOLD,
   INCOME, KILL_GOLD, KILL_XP, BASE_XP, SHOT_SPEED, XP_TO_EVOLVE, SPECIAL_CD, DROP_FALL,
-  MAX_SLOTS, SLOT_COSTS, SELL_REFUND, slotY, DIFFICULTIES, ERAS,
+  MAX_SLOTS, SLOT_COSTS, SELL_REFUND, slotY, DIFFICULTIES, ERAS, SECRET_ERA,
 } from './data.js';
 
 export const WALK = 0, ATTACK = 1, IDLE = 2;
@@ -20,10 +20,15 @@ function makeSide(dir, mult) {
 }
 
 // sides[0] = jogador (anda pra direita), sides[1] = IA.
-export function newGame(diff = 1, ai = true) {
+// mode: 'classic' (derrubar a base inimiga) ou 'endless' (aguentar ondas; a base inimiga não cai)
+export function newGame(diff = 1, ai = true, mode = 'classic') {
   return {
     sides: [makeSide(1, 1), makeSide(-1, DIFFICULTIES[diff].income)],
-    shots: [], drops: [], dying: [], fx: [], winner: -1, time: 0, diff, ai, aiT: 2,
+    shots: [], drops: [], dying: [], fx: [], winner: -1, time: 0, diff, ai, aiT: 2, mode,
+    // o que o jogador fez na partida (pras conquistas)
+    stats: { specials: 0, turrets: 0, maxTurrets: 0, maxUnits: 0, suprema: 0 },
+    // modo infinito
+    wave: 0, waveT: 8, waveOn: false, pending: [], bannerT: 0, bannerDone: false, bonus: 0,
   };
 }
 
@@ -36,6 +41,7 @@ export function train(g, s, i) {
   side.gold -= def.cost;
   if (side.queue.length === 0) side.trainT = def.train;
   side.queue.push(def);
+  if (s === 0 && def.type === 3) g.stats.suprema++;
   return true;
 }
 
@@ -44,6 +50,10 @@ export function buyTurret(g, s, i) {
   if (g.winner >= 0 || !def || k < 0 || side.gold < def.cost) return false;
   side.gold -= def.cost;
   side.slots[k] = { def, cd: 0 };
+  if (s === 0) {
+    g.stats.turrets++;
+    g.stats.maxTurrets = Math.max(g.stats.maxTurrets, side.slots.filter(Boolean).length);
+  }
   return true;
 }
 
@@ -69,6 +79,7 @@ export const canEvolve = (side) => side.era < ERAS.length - 1 && side.xp >= XP_T
 export function evolve(g, s, force = false) {
   const side = g.sides[s];
   if (g.winner >= 0 || side.era >= ERAS.length - 1 || (!force && !canEvolve(side))) return false;
+  if (s === 1 && side.era + 1 === SECRET_ERA && g.sides[0].era < SECRET_ERA) return false; // a IA só vai pra era secreta depois do jogador
   side.era++;
   fx(g, 'evolve', side.base.x, GROUND - 40, side.dir);
   const b = side.base, hp = ERAS[side.era].baseHp;
@@ -82,6 +93,7 @@ export function special(g, s) {
   const side = g.sides[s], sp = ERAS[side.era].special, foes = g.sides[1 - s].units;
   if (g.winner >= 0 || side.specialT > 0) return false;
   side.specialT = SPECIAL_CD;
+  if (s === 0) g.stats.specials++;
   fx(g, 'special', 0, 0, side.dir);
   const lo = WORLD * 0.2, hi = WORLD - BASE_W;
   for (let i = 0; i < sp.count; i++) {
@@ -145,6 +157,7 @@ function hurt(g, s, t, dmg) {
   } else {
     me.xp += dmg * BASE_XP;
     fx(g, 'hit', t.x - me.dir * t.w / 2, GROUND - 25, me.dir);
+    if (g.mode === 'endless' && s === 0) t.hp = t.maxHp; // no infinito a base inimiga não cai
     if (t.hp <= 0) g.winner = s;
   }
 }
@@ -200,11 +213,60 @@ function ai(g, dt) {
   for (let i = r < 0.5 ? 0 : r < 0.85 ? 1 : 2; i >= 0; i--) if (train(g, 1, i)) return;
 }
 
+// Modo infinito: ondas cada vez maiores e mais fortes; a cada 4 ondas o inimigo sobe de era.
+export function waveUnits(g, wave) {
+  const foe = g.sides[1], mult = DIFFICULTIES[g.diff].income;
+  const units = ERAS[foe.era].units, m = 1 + 0.05 * (wave - 1) * mult; // vida e dano crescem a cada onda
+  const count = Math.min(30, Math.round((3 + wave * 1.2) * Math.sqrt(mult)));
+  const list = [];
+  const pick = (i) => {
+    const d = units[i];
+    list.push({ ...d, hp: Math.round(d.hp * m), dmg: d.dmg * m, train: 0.6 });
+  };
+  for (let n = 0; n < count; n++) {
+    const r = Math.random() * 100, heavy = 15 + wave;
+    pick(r < heavy ? 2 : r < heavy + 30 ? 1 : 0);
+  }
+  if (wave % 5 === 0) { // onda de chefe
+    for (let n = 0; n < 1 + wave / 5; n++) pick(2);
+    if (units[3]) pick(3);
+  }
+  return list;
+}
+
+function waves(g, dt) {
+  const foe = g.sides[1], me = g.sides[0];
+  if (g.bannerT > 0) g.bannerT -= dt;
+  if (g.waveOn) {
+    if (g.pending.length && foe.queue.length < 2) {
+      if (!foe.queue.length) foe.trainT = 0.6;
+      foe.queue.push(g.pending.shift());
+    }
+    if (g.pending.length || foe.queue.length || foe.units.length) return;
+    g.waveOn = false; // onda vencida: bônus e pausa
+    g.waveT = 10;
+    g.bonus = Math.round(ERAS[me.era].units[0].cost * (4 + g.wave));
+    me.gold += g.bonus;
+    g.bannerT = 2.5; g.bannerDone = true;
+    fx(g, 'evolve', me.base.x, GROUND - 40, me.dir);
+    return;
+  }
+  if ((g.waveT -= dt) > 0) return;
+  g.wave++;
+  const cap = me.era >= SECRET_ERA ? SECRET_ERA : SECRET_ERA - 1;
+  while (foe.era < Math.min(cap, Math.floor((g.wave - 1) / 4))) evolve(g, 1, true);
+  g.pending = waveUnits(g, g.wave);
+  g.waveOn = true;
+  g.bannerT = 2.5; g.bannerDone = false;
+  fx(g, 'special', 0, 0, foe.dir);
+}
+
 export function update(g, dt) {
   if (g.winner >= 0) return;
   g.time += dt;
   if (g.fx.length > 800) g.fx.length = 0; // ninguém consumindo os eventos (ex.: nos testes)
-  if (g.ai) ai(g, dt);
+  if (g.mode === 'endless') waves(g, dt);
+  else if (g.ai) ai(g, dt);
 
   for (let s = 0; s < 2; s++) {
     const side = g.sides[s], foe = g.sides[1 - s], d = side.dir, b = side.base;
@@ -293,4 +355,5 @@ export function update(g, dt) {
   compact(g.dying, asleep);
   compact(g.sides[0].units, alive);
   compact(g.sides[1].units, alive);
+  if (g.sides[0].units.length > g.stats.maxUnits) g.stats.maxUnits = g.sides[0].units.length;
 }
