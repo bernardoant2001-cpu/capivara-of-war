@@ -71,6 +71,8 @@ const COLORS = [
 const TURRET_COLORS = ['#a89a7c', '#c9a14a', '#77706a'];
 const ERA_COLORS = ['#5a3d1e', '#b8bec8', '#2f6e3a', '#6b7a2f', '#3ff0ff', '#c04cff']; // faixa na cabeça
 
+let mine = 0;
+
 export const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
 // posições da interface (em pixels lógicos); o main.js usa as mesmas pra saber onde clicou
@@ -88,6 +90,8 @@ export const LANG_BTN = { x: 388, y: 263, w: 120, h: 15 };
 export const BACK_BTN = { x: W / 2 - 55, y: 338, w: 110, h: 14 };
 const ACH_CELL = (i) => ({ x: 18 + (i % 3) * 204, y: 40 + Math.floor(i / 3) * 59, w: 196, h: 52 });
 export const LANG_PICK = [{ x: W / 2 - 150, y: 140, w: 140, h: 46 }, { x: W / 2 + 10, y: 140, w: 140, h: 46 }];
+export const ONLINE_BTN = { x: W / 2 - 60, y: 284, w: 120, h: 15 };
+export const CODE_BOX = { x: W / 2 - 58, y: 128, w: 116, h: 34 };
 
 // fundo: a imagem cobre o campo inteiro (WORLD), por frame é só 1 drawImage
 function drawBg(ctx, cam, era) {
@@ -102,16 +106,17 @@ export function draw(ctx, g, ui) {
   const sx = shake > 0.05 ? Math.round(rnd(-shake, shake) * RES) : 0, sy = shake > 0.05 ? Math.round(rnd(-shake, shake) * RES) : 0;
   ctx.setTransform(RES, 0, 0, RES, sx, sy);
   const cam = Math.round(ui.cam);
-  drawBg(ctx, cam, g.sides[0].era);
+  mine = ui.me || 0;
+  drawBg(ctx, cam, g.sides[mine].era);
 
   for (let s = 0; s < 2; s++) drawBase(ctx, g, s, cam, ui);
 
   // alcance da torre com o mouse em cima do botão
-  const hoverTurret = ui.towers && ERAS[g.sides[0].era].turrets[ui.hover];
+  const hoverTurret = ui.towers && ERAS[g.sides[mine].era].turrets[ui.hover];
   if (hoverTurret) {
-    const b = g.sides[0].base, fx = Math.round(b.x + b.w / 2) - cam;
+    const side = g.sides[mine], b = side.base, fx = Math.round(b.x + side.dir * b.w / 2) - cam;
     ctx.fillStyle = 'rgba(255,255,255,0.25)';
-    ctx.fillRect(fx, GROUND - 2, hoverTurret.range, 4);
+    ctx.fillRect(side.dir > 0 ? fx : fx - hoverTurret.range, GROUND - 2, hoverTurret.range, 4);
   }
 
   // desenha por profundidade: quem tá mais "pra frente" no chão fica por cima
@@ -277,7 +282,7 @@ function drawBase(ctx, g, s, cam, ui) {
   for (let i = 0; i < side.slots.length; i++) {
     const t = side.slots[i], y = slotY(i) + TURRET_H;
     if (!t) {
-      if (s === 0 && ui.towers) { // vaga livre: contorno pra mostrar onde a torre vai
+      if (s === mine && ui.towers) { // vaga livre: contorno pra mostrar onde a torre vai
         ctx.strokeStyle = 'rgba(255,240,200,0.55)'; ctx.lineWidth = 0.7;
         ctx.strokeRect(Math.round(fx - TURRET_W / 2), y - TURRET_H - 2, TURRET_W, TURRET_H + 1);
       }
@@ -290,7 +295,7 @@ function drawBase(ctx, g, s, cam, ui) {
       ctx.fillStyle = ERA_COLORS[t.def.era];
       ctx.fillRect(Math.round(fx - TURRET_W / 2 + kick), y - TURRET_H, TURRET_W, 2);
     }
-    if (s === 0 && ui.selling) {
+    if (s === mine && ui.selling) {
       ctx.fillStyle = 'rgba(230,50,50,0.45)';
       ctx.fillRect(Math.round(fx - 10), y - 18, 20, 18);
     }
@@ -473,10 +478,10 @@ function hpBar(ctx, x, y, w, frac, color, h = 3) {
 
 // retrato: o primeiro quadro do personagem (ou a torre) encaixado na caixa
 function portrait(ctx, def, x, y, size, dim) {
-  const f = def.sprite && (FRAMES[def.sprite] || frame(def.sprite, 0, 'walk', 0));
+  const f = def.sprite && (FRAMES[mine ? def.sprite + '_inimigo' : def.sprite] || frame(def.sprite, mine, 'walk', 0));
   ctx.globalAlpha = dim ? 0.4 : 1;
   if (!f) {
-    ctx.fillStyle = (def.type !== undefined && COLORS[0][def.type]) || '#999';
+    ctx.fillStyle = (def.type !== undefined && COLORS[mine][def.type]) || '#999';
     ctx.fillRect(x + 4, y + 4, size - 8, size - 8);
   } else {
     const w = f[2] / RES, h = f[3] / RES, k = Math.min(size / w, size / h), dw = w * k, dh = h * k;
@@ -569,7 +574,7 @@ function drawHudBg(ctx) {
 }
 
 function drawHud(ctx, g, ui) {
-  const me = g.sides[0], era = ERAS[me.era], mx = ui.mx, my = ui.my;
+  const me = g.sides[mine], era = ERAS[me.era], mx = ui.mx, my = ui.my;
   ctx.textBaseline = 'top';
   drawHudBg(ctx);
 
@@ -653,14 +658,20 @@ function drawHud(ctx, g, ui) {
       text(ctx, t('backMenu'), x + w / 2, y + 128 - 20, 7.5, '#e8d2ad', 'center', false, OUT);
     });
   } else if (g.winner >= 0) {
-    const win = g.winner === 0;
+    const win = g.winner === mine;
     board(ctx, win ? t('win') : t('lose'), win ? '#f8d878' : '#ff8a7a', 270, 128, (x, y, w) => {
       const row = y + 46;
       statLine(ctx, x + w / 2, row, [['time', fmt(g.time)], ['kills', `${me.kills} ${t('kills')}`], ['evolve', nm(era)]]);
-      text(ctx, nm(DIFFICULTIES[g.diff]), x + w / 2, y + 30, 8, '#e8d2ad', 'center', false, OUT);
+      text(ctx, g.mode === 'pvp' ? t('onlineTag') : nm(DIFFICULTIES[g.diff]), x + w / 2, y + 30, 8, '#e8d2ad', 'center', false, OUT);
       if (ui.newRecord) text(ctx, t('record'), x + w / 2, row + 20, 10, '#f8d878', 'center', true, OUT);
       text(ctx, t('backMenu'), x + w / 2, y + 128 - 20, 7.5, '#e8d2ad', 'center', false, OUT);
     });
+  } else if (ui.netEnd) { // online acabou sem vencedor: o outro saiu ou as partidas ficaram diferentes
+    board(ctx, t(ui.netEnd), '#ff8a7a', 270, 76, (x, y, w) => {
+      text(ctx, t('backMenu'), x + w / 2, y + 46, 7.5, '#e8d2ad', 'center', false, OUT);
+    });
+  } else if (ui.waiting) {
+    text(ctx, t('waitOpp'), W / 2, 112, 11, '#fff4dc', 'center', true, OUT);
   } else if (ui.paused) {
     board(ctx, t('paused'), '#fff4dc', 220, 76, (x, y, w) => {
       text(ctx, t('resume'), x + w / 2, y + 46, 8, '#e8d2ad', 'center', false, OUT);
@@ -734,6 +745,7 @@ export function drawMenu(ctx, ui) {
   plank(ctx, MODE_BTN, ui.mode === 'endless' ? t('endless') : t('classic'), ui.mode === 'endless' ? 'hot' : 'wood', inside(MODE_BTN, ui.mx, ui.my));
   plank(ctx, ACH_BTN, `${t('achievements')} ${ui.got.size}/${ACHIEVEMENTS.length}`, 'wood', inside(ACH_BTN, ui.mx, ui.my));
   plank(ctx, LANG_BTN, t('lang'), 'wood', inside(LANG_BTN, ui.mx, ui.my));
+  plank(ctx, ONLINE_BTN, t('online'), 'go', inside(ONLINE_BTN, ui.mx, ui.my));
   drawToasts(ctx, ui);
   text(ctx, t('help'), W / 2, H - 16, 7, '#f3e6cc', 'center', false, OUT);
   if (ui.showFps) text(ctx, `${ui.fps} fps`, W - 6, 6, 7, '#fff', 'right', false, OUT);
@@ -796,4 +808,36 @@ function drawToasts(ctx, ui) {
     text(ctx, name, x + 29, y + 13, 9, '#fff4dc', 'left', true, OUT, w - 34);
     ctx.globalAlpha = 1;
   });
+}
+
+// tela do online: criar sala ou entrar com o código do amigo
+export function drawOnline(ctx, ui) {
+  menuBackdrop(ctx);
+  mascots(ctx);
+  const n = ui.net;
+  text(ctx, t('onlineTitle'), W / 2, 22, 20, '#f8d878', 'center', true, OUT);
+  text(ctx, t('onlineHelp'), W / 2, 52, 8, '#f3e6cc', 'center', false, OUT);
+  if (!n.role) {
+    LANG_PICK.forEach((b, i) => {
+      const hover = inside(b, ui.mx, ui.my);
+      panel(ctx, b.x, b.y, b.w, b.h, hover ? TONES.wood[1] : TONES.wood[0], TONES.wood[1], TONES.wood[2]);
+      nail(ctx, b.x + 4, b.y + 4); nail(ctx, b.x + b.w - 4, b.y + 4);
+      text(ctx, i ? t('join') : t('host'), b.x + b.w / 2, b.y + 9, 12, '#fff4dc', 'center', true, OUT, b.w - 12);
+      text(ctx, i ? t('press2') : t('press1'), b.x + b.w / 2, b.y + 30, 7.5, '#ffe9a8', 'center', false, OUT);
+    });
+  } else {
+    const B = CODE_BOX;
+    text(ctx, n.role === 'host' ? t('roomCode') : t('typeCode'), W / 2, B.y - 18, 9, '#f3e6cc', 'center', false, OUT);
+    panel(ctx, B.x, B.y, B.w, B.h, TONES.wood[0], TONES.wood[1], TONES.wood[2]);
+    for (let i = 0; i < 4; i++) {
+      const x = B.x + 6 + i * 27;
+      inset(ctx, x, B.y + 5, 23, B.h - 10, '#3a2414');
+      const c = n.code[i] || (n.role === 'join' && i === n.code.length && performance.now() % 1000 < 500 ? '_' : '');
+      text(ctx, c, x + 11.5, B.y + 6, 20, '#f8d878', 'center', true, OUT);
+    }
+    if (n.role === 'join' && !n.busy) text(ctx, t('enterJoin'), W / 2, B.y + B.h + 8, 7.5, '#ffe9a8', 'center', false, OUT);
+    if (n.status) text(ctx, t(n.status), W / 2, B.y + B.h + 22, 9, n.error ? '#ff8a7a' : '#fff4dc', 'center', true, OUT);
+  }
+  plank(ctx, BACK_BTN, t('back'), 'wood', inside(BACK_BTN, ui.mx, ui.my));
+  ctx.textAlign = 'left';
 }

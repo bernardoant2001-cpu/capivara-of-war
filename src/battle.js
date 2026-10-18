@@ -7,6 +7,18 @@ import {
 
 export const WALK = 0, ATTACK = 1, IDLE = 2;
 
+// sorteio com semente (mulberry32): no online os dois lados precisam sortear exatamente igual
+function rng(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 // evento pra som e efeito visual: nome, x, y e direção de quem causou (4 valores seguidos, sem criar objeto)
 const fx = (g, name, x, y, dir) => g.fx.push(name, x, y, dir);
 
@@ -20,10 +32,11 @@ function makeSide(dir, mult) {
 }
 
 // sides[0] = jogador (anda pra direita), sides[1] = IA.
-// mode: 'classic' (derrubar a base inimiga) ou 'endless' (aguentar ondas; a base inimiga não cai)
-export function newGame(diff = 1, ai = true, mode = 'classic') {
+// mode: 'classic' (derrubar a base inimiga), 'endless' (aguentar ondas; a base inimiga não cai) ou 'pvp' (dois jogadores)
+export function newGame(diff = 1, ai = true, mode = 'classic', seed = (Math.random() * 2 ** 32) >>> 0) {
   return {
-    sides: [makeSide(1, 1), makeSide(-1, DIFFICULTIES[diff].income)],
+    sides: [makeSide(1, 1), makeSide(-1, mode === 'pvp' ? 1 : DIFFICULTIES[diff].income)],
+    rand: rng(seed), tick: 0,
     shots: [], drops: [], dying: [], fx: [], winner: -1, time: 0, diff, ai, aiT: 2, mode,
     // o que o jogador fez na partida (pras conquistas)
     stats: { specials: 0, turrets: 0, maxTurrets: 0, maxUnits: 0, suprema: 0 },
@@ -79,7 +92,7 @@ export const canEvolve = (side) => side.era < ERAS.length - 1 && side.xp >= XP_T
 export function evolve(g, s, force = false) {
   const side = g.sides[s];
   if (g.winner >= 0 || side.era >= ERAS.length - 1 || (!force && !canEvolve(side))) return false;
-  if (s === 1 && side.era + 1 === SECRET_ERA && g.sides[0].era < SECRET_ERA) return false; // a IA só vai pra era secreta depois do jogador
+  if (g.mode !== 'pvp' && s === 1 && side.era + 1 === SECRET_ERA && g.sides[0].era < SECRET_ERA) return false; // a IA só vai pra era secreta depois do jogador
   side.era++;
   fx(g, 'evolve', side.base.x, GROUND - 40, side.dir);
   const b = side.base, hp = ERAS[side.era].baseHp;
@@ -97,10 +110,10 @@ export function special(g, s) {
   fx(g, 'special', 0, 0, side.dir);
   const lo = WORLD * 0.2, hi = WORLD - BASE_W;
   for (let i = 0; i < sp.count; i++) {
-    const r = lo + Math.random() * (hi - lo);
-    const u = foes.length && Math.random() < 0.75 ? foes[Math.floor(Math.random() * foes.length)] : null;
+    const r = lo + g.rand() * (hi - lo);
+    const u = foes.length && g.rand() < 0.75 ? foes[Math.floor(g.rand() * foes.length)] : null;
     g.drops.push({
-      s, u, off: (Math.random() - 0.5) * 48, x: side.dir > 0 ? r : WORLD - r,
+      s, u, off: (g.rand() - 0.5) * 48, x: side.dir > 0 ? r : WORLD - r,
       t: DROP_FALL + i * 0.12, dmg: sp.dmg, r: sp.radius, era: side.era, done: false,
     });
   }
@@ -108,7 +121,7 @@ export function special(g, s) {
 }
 
 // TODO: usar pool de objetos se o spawn começar a pesar
-function trySpawn(side, def) {
+function trySpawn(g, side, def) {
   const b = side.base, d = side.dir;
   const x = b.x + d * (b.w / 2 + def.w / 2);
   if (side.units.length >= MAX_UNITS) return false;
@@ -119,9 +132,9 @@ function trySpawn(side, def) {
   side.units.push({
     def, x, w: def.w, hp: def.hp, cd: def.cd / 2, hitT: 0, state: WALK,
     // cada um para num ponto diferente dentro do alcance, pra virar bolo e não fila
-    reach: def.range - Math.random() * Math.min(def.range * 0.8, 30),
-    lag: 12 + Math.random() * 30, // quanto o de distância fica atrás do corpo a corpo
-    z: Math.floor(Math.random() * 9), // profundidade no chão (só visual)
+    reach: def.range - g.rand() * Math.min(def.range * 0.8, 30),
+    lag: 12 + g.rand() * 30, // quanto o de distância fica atrás do corpo a corpo
+    z: Math.floor(g.rand() * 9), // profundidade no chão (só visual)
   });
   return true;
 }
@@ -193,7 +206,7 @@ function ai(g, dt) {
   }
 
   if ((g.aiT -= dt) > 0) return;
-  g.aiT = 0.6 + Math.random() * 1.2;
+  g.aiT = 0.6 + g.rand() * 1.2;
 
   // depois de 1 min, troca a torre por uma melhor quando sobra dinheiro
   if (g.time > 60) {
@@ -207,7 +220,7 @@ function ai(g, dt) {
   }
 
   if (me.units.length + me.queue.length >= diff.maxUnits) return;
-  const r = Math.random();
+  const r = g.rand();
   if (r < 0.05 && train(g, 1, 3)) return; // Suprema, se estiver na era 5 e tiver ouro
   // pesos 50/35/15; se não der pra pagar o sorteado, tenta um mais barato
   for (let i = r < 0.5 ? 0 : r < 0.85 ? 1 : 2; i >= 0; i--) if (train(g, 1, i)) return;
@@ -224,7 +237,7 @@ export function waveUnits(g, wave) {
     list.push({ ...d, hp: Math.round(d.hp * m), dmg: d.dmg * m, train: 0.6 });
   };
   for (let n = 0; n < count; n++) {
-    const r = Math.random() * 100, heavy = 15 + wave;
+    const r = g.rand() * 100, heavy = 15 + wave;
     pick(r < heavy ? 2 : r < heavy + 30 ? 1 : 0);
   }
   if (wave % 5 === 0) { // onda de chefe
@@ -264,6 +277,7 @@ function waves(g, dt) {
 export function update(g, dt) {
   if (g.winner >= 0) return;
   g.time += dt;
+  g.tick++;
   if (g.fx.length > 800) g.fx.length = 0; // ninguém consumindo os eventos (ex.: nos testes)
   if (g.mode === 'endless') waves(g, dt);
   else if (g.ai) ai(g, dt);
@@ -274,7 +288,7 @@ export function update(g, dt) {
     if (side.specialT > 0) side.specialT -= dt;
     if (b.hitT > 0) b.hitT -= dt;
 
-    if (side.queue.length && (side.trainT -= dt) <= 0 && trySpawn(side, side.queue[0])) {
+    if (side.queue.length && (side.trainT -= dt) <= 0 && trySpawn(g, side, side.queue[0])) {
       side.queue.shift();
       if (side.queue.length) side.trainT = side.queue[0].train;
     }

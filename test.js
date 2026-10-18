@@ -4,6 +4,7 @@ import {
   newGame, update, train, buyTurret, buySlot, sellTurret, evolve, special, canEvolve, waveUnits, ATTACK,
 } from './src/battle.js';
 import { ACHIEVEMENTS, check } from './src/achievements.js';
+import { createMatch, stateHash } from './src/lockstep.js';
 import { ERAS, KILL_GOLD, INCOME, XP_TO_EVOLVE, SPECIAL_CD, DIFFICULTIES, SECRET_ERA } from './src/data.js';
 
 const UNITS = ERAS[0].units, TURRETS = ERAS[0].turrets;
@@ -218,6 +219,36 @@ for (const era of ERAS) {
   g.stats.specials = 1;
   assert.ok(!check(g, new Set(), 0).includes('nospecial'));
   for (const a of ACHIEVEMENTS) for (const l of ['pt', 'en']) assert.ok(a[l][1].length <= 30, 'descrição grande: ' + a[l][1]);
+}
+
+// Online: dois "computadores" com rede lenta e bagunçada jogam a mesma partida e terminam idênticos.
+{
+  const seed = 12345, net = [[], []]; // mensagens a caminho de cada lado
+  let clock = 0;
+  const mk = (me) => createMatch(seed, me, (msg) => net[1 - me].push({ at: clock + 2 + Math.floor(Math.random() * 12), msg: JSON.parse(JSON.stringify(msg)) }));
+  const A = mk(0), B = mk(1);
+  const bots = [A, B];
+  for (clock = 0; clock < 60 * 400 && A.g.winner < 0; clock++) {
+    for (const [k, m] of bots.entries()) {
+      // entrega o que já chegou (fora de ordem não acontece: cada lado manda em ordem)
+      while (net[k].length && net[k][0].at <= clock) m.receive(net[k].shift().msg);
+      if (Math.random() < 0.02) m.act('train', Math.floor(Math.random() * 3));
+      if (Math.random() < 0.002) m.act(Math.random() < 0.5 ? 'special' : 'evolve');
+      if (Math.random() < 0.001) m.act('turret', 2);
+      if (Math.random() < 0.3) { let n = 0; while (m.canStep() && n++ < 3) m.step(); } // cada um anda no seu ritmo
+      m.flush();
+    }
+  }
+  // deixa os dois alcançarem o mesmo ponto
+  for (let i = 0; i < 5000 && (A.g.tick !== B.g.tick || A.g.winner < 0 && A.g.tick < 60 * 100); i++) {
+    for (const [k, m] of bots.entries()) { while (net[k].length) m.receive(net[k].shift().msg); if (m.canStep()) m.step(); m.flush(); }
+    clock++;
+  }
+  const t = Math.min(A.g.tick, B.g.tick);
+  assert.ok(t > 60 * 30, 'quase não andou: ' + t);
+  assert.ok(!A.desync && !B.desync, 'dessincronizou');
+  if (A.g.tick === B.g.tick) assert.equal(stateHash(A.g), stateHash(B.g));
+  assert.ok(A.g.sides[0].units.length + A.g.sides[1].units.length + A.g.sides[0].kills > 0, 'ninguém treinou nada');
 }
 
 console.log('ok');
