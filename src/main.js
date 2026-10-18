@@ -1,10 +1,10 @@
 import { W, H, RES, WORLD, HUD_H, TURRET_W, TURRET_H, slotY } from './data.js';
 import { newGame, update, train, buyTurret, buySlot, sellTurret, evolve, special } from './battle.js';
 import {
-  draw, drawMenu, ready, effect, LANG_BTN, BUTTONS, SLOT_BTN, SELL_BTN, TOGGLE_BTN, SPECIAL_BTN, EVOLVE_BTN, MENU_BTNS,
+  draw, drawMenu, drawLangPick, ready, effect, LANG_BTN, LANG_PICK, BUTTONS, SLOT_BTN, SELL_BTN, TOGGLE_BTN, SPECIAL_BTN, EVOLVE_BTN, MENU_BTNS,
 } from './render.js';
 import * as audio from './audio.js';
-import { toggleLang } from './i18n.js';
+import { toggleLang, setLang } from './i18n.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -36,6 +36,7 @@ let g = null; // null = menu
 const ui = {
   cam: 0, paused: false, showFps: false, fps: 0, towers: false, selling: false,
   hover: -1, hoverMenu: -1, mx: -1, my: -1, records: loadRecords(), newRecord: false, saved: false, muted: audio.isMuted(),
+  screen: 'lang', // lang -> menu -> jogo
 };
 const keys = new Set();
 let mouseX = -1, mouseY = -1, dragX = null;
@@ -83,6 +84,11 @@ function slotAt(x, y) {
 canvas.addEventListener('pointerdown', (e) => {
   audio.init();
   const [x, y] = toGame(e);
+  if (!g && ui.screen === 'lang') {
+    const k = LANG_PICK.findIndex((b) => inside(b, x, y));
+    if (k >= 0) { setLang(k ? 'en' : 'pt'); ui.screen = 'menu'; }
+    return;
+  }
   if (!g) {
     const i = MENU_BTNS.findIndex((b) => inside(b, x, y));
     if (i >= 0) start(i);
@@ -123,6 +129,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyL') { toggleLang(); return; }
   const n = e.code.startsWith('Digit') ? +e.code.at(-1) - 1 : -1;
   if (e.code === 'F3') { ui.showFps = !ui.showFps; e.preventDefault(); return; }
+  if (!g && ui.screen === 'lang') { if (n === 0 || n === 1) { setLang(n ? 'en' : 'pt'); ui.screen = 'menu'; } return; }
   if (!g) { if (n >= 0 && n < MENU_BTNS.length) start(n); return; }
   if (g.winner >= 0) { if (e.code === 'Enter') g = null; return; }
   if (e.code === 'KeyP' || (e.code === 'Escape' && !ui.selling)) { ui.paused = !ui.paused; return; }
@@ -171,7 +178,7 @@ function frame(now) {
   frames++;
   if ((fpsT += dt) >= 1) { ui.fps = frames; frames = 0; fpsT -= 1; }
   ui.dt = g && !ui.paused ? dt : 0;
-  if (g) draw(ctx, g, ui); else drawMenu(ctx, ui);
+  if (g) draw(ctx, g, ui); else if (ui.screen === 'lang') drawLangPick(ctx, ui); else drawMenu(ctx, ui);
   requestAnimationFrame(frame);
 }
 await ready; // só começa com a arte carregada

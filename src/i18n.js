@@ -30,8 +30,11 @@ export const t = (k) => TEXT[lang][k];
 // nome de era, unidade, torre, especial ou dificuldade no idioma atual
 export const nm = (o) => (lang === 'en' && o.en) || o.name;
 
-export function toggleLang() {
-  lang = lang === 'pt' ? 'en' : 'pt';
+export const getLang = () => lang;
+export const toggleLang = () => setLang(lang === 'pt' ? 'en' : 'pt');
+
+export function setLang(l) {
+  lang = l;
   try { localStorage.setItem(KEY, lang); } catch {}
   document.documentElement.lang = lang === 'pt' ? 'pt-BR' : 'en';
 }

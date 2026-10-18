@@ -3,7 +3,7 @@ import {
   MAX_SLOTS, SLOT_COSTS, TURRET_W, TURRET_H, slotY,
 } from './data.js';
 import { ATTACK, WALK, canEvolve, DYING_TIME } from './battle.js';
-import { t, nm } from './i18n.js';
+import { t, nm, getLang } from './i18n.js';
 
 // Sprites: um atlas por era que já tem arte + versão branca de cada um pro piscar de dano.
 const atlases = [], whites = [], bgs = [];
@@ -25,7 +25,11 @@ async function loadEra(k) {
   atlases[k] = img; whites[k] = w; bgs[k] = bg;
 }
 // eras 1 e 2 seguram o começo; as outras baixam em segundo plano (até lá aparecem como quadrados)
-export const ready = Promise.all([document.fonts.load('8px "Jersey 10"'), loadEra(0), loadEra(1)])
+const uiAtlas = new Image();
+uiAtlas.src = 'assets/ui.png';
+let UI = {};
+const loadUi = Promise.all([fetch('assets/ui.json').then((r) => r.json()).then((f) => { UI = f; }), uiAtlas.decode()]);
+export const ready = Promise.all([document.fonts.load('8px "Jersey 10"'), loadUi, loadEra(0), loadEra(1)])
   .then(() => { for (let k = 2; k < ERAS.length; k++) loadEra(k).catch(() => {}); });
 
 // a era com arte mais recente que não passa de `era` (as que ainda não têm arte usam a anterior)
@@ -68,29 +72,22 @@ const ERA_COLORS = ['#5a3d1e', '#b8bec8', '#2f6e3a', '#6b7a2f', '#3ff0ff']; // f
 
 export const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
-export const BUTTONS = [0, 1, 2, 3].map((i) => ({ x: 6 + i * 77, y: 6, w: 75, h: 28 }));
-export const SLOT_BTN = { x: 316, y: 6, w: 70, h: 13 };
-export const SELL_BTN = { x: 316, y: 21, w: 70, h: 13 };
-export const SPECIAL_BTN = { x: 456, y: 6, w: 60, h: 28 };
-export const EVOLVE_BTN = { x: 520, y: 6, w: 60, h: 28 };
-export const TOGGLE_BTN = { x: 584, y: 6, w: 52, h: 28 };
-export const MENU_BTNS = DIFFICULTIES.map((_, i) => ({ x: W / 2 - 80, y: 124 + i * 34, w: 160, h: 28 }));
-export const LANG_BTN = { x: W / 2 - 60, y: 266, w: 120, h: 16 };
+// posições da interface (em pixels lógicos); o main.js usa as mesmas pra saber onde clicou
+export const BUTTONS = [0, 1, 2, 3].map((i) => ({ x: 7 + i * 78, y: 5, w: 74, h: 30 }));
+export const SLOT_BTN = { x: 241, y: 5, w: 74, h: 13 };
+export const SELL_BTN = { x: 241, y: 22, w: 74, h: 13 };
+const RES_BOX = { x: 324, y: 5, w: 104, h: 30 };
+export const SPECIAL_BTN = { x: 434, y: 5, w: 66, h: 30 };
+export const EVOLVE_BTN = { x: 503, y: 5, w: 66, h: 30 };
+export const TOGGLE_BTN = { x: 572, y: 5, w: 63, h: 30 };
+export const MENU_BTNS = DIFFICULTIES.map((_, i) => ({ x: W / 2 - 85, y: 122 + i * 33, w: 170, h: 27 }));
+export const LANG_BTN = { x: W / 2 - 55, y: 260, w: 110, h: 15 };
+export const LANG_PICK = [{ x: W / 2 - 150, y: 140, w: 140, h: 46 }, { x: W / 2 + 10, y: 140, w: 140, h: 46 }];
 
 // fundo: a imagem cobre o campo inteiro (WORLD), por frame é só 1 drawImage
 function drawBg(ctx, cam, era) {
   const bg = bgs[artEra(era, bgs)], k = bg.width / WORLD;
   ctx.drawImage(bg, cam * k, 0, W * k, bg.height, 0, 0, W, H);
-}
-
-// barra com borda escura; sem cor = verde/amarelo/vermelho pela vida que sobra
-function hpBar(ctx, x, y, w, frac, color, h = 3) {
-  frac = Math.max(0, Math.min(1, frac));
-  ctx.fillStyle = '#1a0f08'; ctx.fillRect(x - 2 / RES, y - 2 / RES, w + 4 / RES, h + 4 / RES);
-  ctx.fillStyle = '#4a1d1d'; ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = color || (frac > 0.5 ? '#5bd15b' : frac > 0.25 ? '#e8c440' : '#e34b3b');
-  ctx.fillRect(x, y, w * frac, h);
-  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(x, y, w * frac, h / 3); // brilho
 }
 
 export function draw(ctx, g, ui) {
@@ -372,6 +369,9 @@ function drawParticles(ctx, dt, cam) {
 
 // ---------- interface ----------
 
+const P = 1 / RES; // 1 pixel de verdade da tela (os sprites também são desenhados nessa escala)
+const OUT = '#1c0f07'; // contorno escuro, o mesmo tom do contorno dos sprites
+
 const fonts = {};
 // a Jersey 10 tem um peso só e desenha menor: os tamanhos da interface são multiplicados aqui
 const font = (px) => (fonts[px] ||= `${Math.round(px * 1.4 * 10) / 10}px "Jersey 10", monospace`);
@@ -380,31 +380,91 @@ const font = (px) => (fonts[px] ||= `${Math.round(px * 1.4 * 10) / 10}px "Jersey
 function text(ctx, str, x, y, px, color, align = 'left', bold = false, outline = null, maxW = undefined) {
   ctx.font = font(px);
   ctx.textAlign = align;
-  if (outline) { ctx.strokeStyle = outline; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.strokeText(str, x, y, maxW); }
+  if (outline) { ctx.strokeStyle = outline; ctx.lineWidth = px >= 14 ? 2.4 : 1.5; ctx.lineJoin = 'round'; ctx.strokeText(str, x, y, maxW); }
   ctx.fillStyle = color;
   ctx.fillText(str, x, y, maxW); // maxW aperta o texto se não couber
 }
 
 const inside = (b, x, y) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
 
-function coin(ctx, x, y, r = 2.6) {
-  ctx.fillStyle = '#5a3a08'; ctx.beginPath(); ctx.arc(x, y, r + 0.7, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#f2c14e'; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#fff3b0'; ctx.fillRect(x - r * 0.5, y - r * 0.6, r * 0.5, r * 0.5);
+// veio da madeira: um ladrilho com riscos claros e escuros, gerado uma vez em pixels de tela
+const grains = new WeakMap(); // o padrão fica preso à tela onde foi criado
+function grainPattern(ctx) {
+  if (grains.has(ctx)) return grains.get(ctx);
+  const c = document.createElement('canvas');
+  c.width = 192; c.height = 96;
+  const g = c.getContext('2d');
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let y = 0; y < c.height; y += 2) {
+    for (let x = 0; x < c.width;) {
+      const len = 6 + rnd() * 40;
+      const v = rnd();
+      g.fillStyle = v < 0.35 ? 'rgba(20,8,0,0.16)' : v < 0.5 ? 'rgba(255,235,190,0.08)' : 'rgba(0,0,0,0)';
+      g.fillRect(x, y, len, 1);
+      x += len;
+    }
+  }
+  for (let k = 0; k < 3; k++) { // nós da madeira
+    const x = rnd() * c.width, y = rnd() * c.height;
+    g.fillStyle = 'rgba(20,8,0,0.22)';
+    g.beginPath(); g.ellipse(x, y, 5, 2, 0, 0, Math.PI * 2); g.fill();
+  }
+  const pat = ctx.createPattern(c, 'repeat');
+  pat.setTransform(new DOMMatrix([P, 0, 0, P, 0, 0]));
+  grains.set(ctx, pat);
+  return pat;
 }
 
-// caixa com relevo: luz em cima, sombra embaixo
-function box(ctx, x, y, w, h, fill, hi, lo) {
-  ctx.fillStyle = '#22140b'; ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
+// placa com contorno de 2px, luz em cima/esquerda e sombra embaixo/direita (como os sprites)
+function panel(ctx, x, y, w, h, fill, light, dark, wood = true) {
+  ctx.fillStyle = OUT; ctx.fillRect(x - 2 * P, y - 2 * P, w + 4 * P, h + 4 * P);
   ctx.fillStyle = fill; ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = hi; ctx.fillRect(x, y, w, 1);
-  ctx.fillStyle = lo; ctx.fillRect(x, y + h - 1, w, 1);
+  if (wood) { ctx.fillStyle = grainPattern(ctx); ctx.fillRect(x, y, w, h); }
+  ctx.fillStyle = light; ctx.fillRect(x, y, w, 2 * P); ctx.fillRect(x, y, 2 * P, h);
+  ctx.fillStyle = dark; ctx.fillRect(x, y + h - 2 * P, w, 2 * P); ctx.fillRect(x + w - 2 * P, y, 2 * P, h);
+}
+
+// buraco escavado na madeira (onde ficam retrato, ícone, barra)
+function inset(ctx, x, y, w, h, fill = '#2a170b') {
+  ctx.fillStyle = OUT; ctx.fillRect(x - P, y - P, w + 2 * P, h + 2 * P);
+  ctx.fillStyle = fill; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x, y, w, 2 * P); ctx.fillRect(x, y, 2 * P, h);
+  ctx.fillStyle = 'rgba(255,220,170,0.18)'; ctx.fillRect(x, y + h - P, w, P);
+}
+
+function nail(ctx, x, y) {
+  ctx.fillStyle = OUT; ctx.fillRect(x - 1, y - 1, 2, 2);
+  ctx.fillStyle = '#9aa0a6'; ctx.fillRect(x - 1 + P, y - 1 + P, 2 - 2 * P, 2 - 2 * P);
+  ctx.fillStyle = '#e4e8ec'; ctx.fillRect(x - 1 + P, y - 1 + P, P, P);
+}
+
+// ícone do atlas da interface, com o lado maior = size; 20 = 1:1 com a arte
+function icon(ctx, name, cx, cy, size, alpha = 1) {
+  const f = UI[name];
+  if (!f) return;
+  const k = size / Math.max(f[2], f[3]), w = f[2] * k, h = f[3] * k;
+  ctx.globalAlpha = alpha;
+  ctx.imageSmoothingEnabled = size * RES < Math.max(f[2], f[3]); // reduzindo, suaviza; no tamanho certo, pixel puro
+  ctx.drawImage(uiAtlas, f[0], f[1], f[2], f[3], cx - w / 2, cy - h / 2, w, h);
+  ctx.imageSmoothingEnabled = false;
+  ctx.globalAlpha = 1;
+}
+
+// barra com borda escura; sem cor = verde/amarelo/vermelho pela vida que sobra
+function hpBar(ctx, x, y, w, frac, color, h = 3) {
+  frac = Math.max(0, Math.min(1, frac));
+  ctx.fillStyle = OUT; ctx.fillRect(x - 2 * P, y - 2 * P, w + 4 * P, h + 4 * P);
+  ctx.fillStyle = '#4a1d1d'; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = color || (frac > 0.5 ? '#5bd15b' : frac > 0.25 ? '#e8c440' : '#e34b3b');
+  ctx.fillRect(x, y, w * frac, h);
+  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(x, y, w * frac, Math.max(P, h / 3)); // brilho
 }
 
 // retrato: o primeiro quadro do personagem (ou a torre) encaixado na caixa
 function portrait(ctx, def, x, y, size, dim) {
   const f = def.sprite && (FRAMES[def.sprite] || frame(def.sprite, 0, 'walk', 0));
-  ctx.globalAlpha = dim ? 0.45 : 1;
+  ctx.globalAlpha = dim ? 0.4 : 1;
   if (!f) {
     ctx.fillStyle = (def.type !== undefined && COLORS[0][def.type]) || '#999';
     ctx.fillRect(x + 4, y + 4, size - 8, size - 8);
@@ -417,48 +477,91 @@ function portrait(ctx, def, x, y, size, dim) {
   ctx.globalAlpha = 1;
 }
 
-// carta de unidade/torre: retrato, tecla, nome e preço
+const PAPER = ['#ecd7a6', '#fff2cf', '#b38d55'], PAPER_HOVER = ['#f7e6bd', '#fffaea', '#c29c62'], PAPER_OFF = ['#a99472', '#c3b08c', '#7f6c4f'];
+
+// carta de unidade/torre: retrato no buraco, etiqueta da tecla, nome e preço
 function card(ctx, b, key, def, ok, canPay, hover) {
-  box(ctx, b.x, b.y, b.w, b.h, ok ? (hover ? '#f8e8c2' : '#ecd9ae') : '#9a8a72', ok ? '#fff6dc' : '#b3a48c', ok ? '#c4a676' : '#7d6e58');
-  ctx.fillStyle = ok ? '#d9bf8c' : '#8a7a62'; ctx.fillRect(b.x + 2, b.y + 2, 26, b.h - 4);
-  portrait(ctx, def, b.x + 2, b.y + 2, 26, !ok);
-  ctx.fillStyle = '#2a180c'; ctx.fillRect(b.x, b.y, 7, 8);
-  text(ctx, key, b.x + 3.5, b.y + 0.5, 7, '#f2c14e', 'center', true);
-  text(ctx, nm(def), b.x + 31, b.y + 3.5, 8, ok ? '#2a180c' : '#4a3d2e', 'left', true, null, b.w - 33);
-  coin(ctx, b.x + 34, b.y + 21);
-  text(ctx, String(def.cost), b.x + 39, b.y + 16, 9, canPay ? '#2a180c' : '#b3261e', 'left', true);
+  const lift = ok && hover ? -1 : 0, y = b.y + lift, c = !ok ? PAPER_OFF : hover ? PAPER_HOVER : PAPER;
+  panel(ctx, b.x, y, b.w, b.h, c[0], c[1], c[2], false);
+  inset(ctx, b.x + 3, y + 3, 26, b.h - 6, ok ? '#5b3a1f' : '#4a3a2a');
+  portrait(ctx, def, b.x + 3, y + 3, 26, !ok);
+  // etiqueta da tecla, pregada no canto
+  ctx.fillStyle = OUT; ctx.fillRect(b.x - 3, y - 3, 9, 9);
+  ctx.fillStyle = '#3a2212'; ctx.fillRect(b.x - 3 + P, y - 3 + P, 9 - 2 * P, 9 - 2 * P);
+  text(ctx, key, b.x + 1.5, y - 2.5, 6.5, '#f8d878', 'center');
+  text(ctx, nm(def), b.x + 32, y + 3.5, 8, ok ? '#2a160a' : '#4a3a2a', 'left', true, null, b.w - 35);
+  icon(ctx, 'coin', b.x + 37, y + 23, 9, ok ? 1 : 0.6);
+  text(ctx, String(def.cost), b.x + 43, y + 17, 9, canPay ? (ok ? '#2a160a' : '#4a3a2a') : '#b3261e');
 }
 
-// botão de madeira; fill (0 a 1) pinta a parte de baixo, pra mostrar carga/progresso
 const TONES = {
-  go: ['#5fae4a', '#9de07f', '#3d7a2f'],
-  hot: ['#d4694f', '#ffa58c', '#9b3f2c'],
-  off: ['#6d5a46', '#8c7660', '#4d3f30'],
-  wood: ['#a8794a', '#d9a873', '#6e4a2a'],
+  go: ['#4e9a3a', '#93dc72', '#2f6a22'],
+  hot: ['#c9573c', '#ff9e7f', '#8d3622'],
+  off: ['#6a5442', '#8b725c', '#46362a'],
+  wood: ['#9d6c3e', '#d7a46c', '#64401f'],
 };
-function plank(ctx, b, l1, l2, tone, hover, fill = 0) {
+
+// botão de madeira simples (texto no meio, ícone opcional à esquerda)
+function plank(ctx, b, label, tone, hover, ico = null) {
   const c = TONES[tone];
-  box(ctx, b.x, b.y, b.w, b.h, hover && tone !== 'off' ? c[1] : c[0], c[1], c[2]);
-  if (fill > 0) { ctx.fillStyle = 'rgba(255,230,140,0.35)'; ctx.fillRect(b.x, b.y + b.h * (1 - fill), b.w, b.h * fill); }
-  const dark = tone === 'off' ? '#e6d6bd' : '#1e120a';
-  if (!l2) return text(ctx, l1, b.x + b.w / 2, b.y + (b.h - 8) / 2, 7.5, dark, 'center', true);
-  text(ctx, l1, b.x + b.w / 2, b.y + 4, 7.5, dark, 'center', true);
-  text(ctx, l2, b.x + b.w / 2, b.y + 16, 7, dark, 'center');
+  panel(ctx, b.x, b.y, b.w, b.h, hover && tone !== 'off' ? c[1] : c[0], c[1], c[2]);
+  const tx = ico ? b.x + b.h + (b.w - b.h) / 2 : b.x + b.w / 2;
+  if (ico) icon(ctx, ico, b.x + b.h / 2 + 1, b.y + b.h / 2, b.h - 3);
+  text(ctx, label, tx, b.y + (b.h - 9) / 2, 7.5, tone === 'off' ? '#e6d6bd' : '#fff4dc', 'center', true, OUT, b.w - (ico ? b.h + 4 : 6));
+}
+
+// botão de ação: soquete redondo com ícone (e a carga girando por cima), título e linha de status
+function action(ctx, b, ico, label, sub, tone, hover, charge, glow) {
+  const c = TONES[tone];
+  panel(ctx, b.x, b.y, b.w, b.h, hover && tone !== 'off' ? c[1] : c[0], c[1], c[2]);
+  const cx = b.x + 14, cy = b.y + b.h / 2, r = 11;
+  if (glow) { // pulsando quando está pronto
+    ctx.fillStyle = `rgba(255,230,120,${0.25 + 0.2 * Math.sin(performance.now() / 160)})`;
+    ctx.beginPath(); ctx.arc(cx, cy, r + 3, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(cx, cy, r + 2 * P, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#2a170b'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  icon(ctx, ico, cx, cy, 17, charge < 1 ? 0.55 : 1);
+  if (charge < 1) { // a parte que falta carregar fica escura, girando no sentido do relógio
+    ctx.fillStyle = 'rgba(15,8,4,0.6)';
+    ctx.beginPath(); ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, -Math.PI / 2 + charge * Math.PI * 2, Math.PI * 1.5); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#f8d878'; ctx.lineWidth = 2 * P;
+    ctx.beginPath(); ctx.arc(cx, cy, r - P, -Math.PI / 2, -Math.PI / 2 + charge * Math.PI * 2); ctx.stroke();
+  }
+  const ink = tone === 'off' ? '#e6d6bd' : '#fff4dc';
+  text(ctx, label, b.x + 27, b.y + 5, 7.5, ink, 'left', true, OUT, b.w - 29);
+  text(ctx, sub, b.x + 27, b.y + 17, 7, tone === 'off' ? '#cdb89c' : '#ffe9a8', 'left', false, OUT, b.w - 29);
+}
+
+// fundo do painel de cima: desenhado uma vez numa tela à parte, depois é um drawImage por quadro
+let hudBg = null;
+function drawHudBg(ctx) {
+  if (!hudBg) {
+    hudBg = document.createElement('canvas');
+    hudBg.width = W * RES; hudBg.height = (HUD_H + 3) * RES;
+    const c = hudBg.getContext('2d');
+    c.setTransform(RES, 0, 0, RES, 0, 0);
+    const grad = c.createLinearGradient(0, 0, 0, HUD_H);
+    grad.addColorStop(0, '#74492a'); grad.addColorStop(1, '#4a2c17');
+    c.fillStyle = grad; c.fillRect(0, 0, W, HUD_H);
+    c.fillStyle = grainPattern(c); c.fillRect(0, 0, W, HUD_H);
+    c.fillStyle = 'rgba(20,8,0,0.35)'; c.fillRect(0, HUD_H / 2, W, 2 * P); // emenda entre as duas tábuas
+    c.fillStyle = 'rgba(255,220,170,0.12)'; c.fillRect(0, HUD_H / 2 + 2 * P, W, P);
+    c.fillStyle = '#a7743f'; c.fillRect(0, 0, W, 2 * P);
+    // moldura de baixo: viga escura + filete claro
+    c.fillStyle = OUT; c.fillRect(0, HUD_H - 2, W, 2);
+    c.fillStyle = '#3a2212'; c.fillRect(0, HUD_H, W, 2);
+    c.fillStyle = '#b07a44'; c.fillRect(0, HUD_H, W, P);
+    for (let x = 4; x < W; x += 80) { nail(c, x, 3); nail(c, x, HUD_H - 4); }
+  }
+  ctx.drawImage(hudBg, 0, 0, W, HUD_H + 3);
 }
 
 function drawHud(ctx, g, ui) {
   const me = g.sides[0], era = ERAS[me.era], mx = ui.mx, my = ui.my;
   ctx.textBaseline = 'top';
-
-  // painel de madeira
-  const grad = ctx.createLinearGradient(0, 0, 0, HUD_H);
-  grad.addColorStop(0, '#6b4426'); grad.addColorStop(1, '#3f2716');
-  ctx.fillStyle = grad; ctx.fillRect(0, 0, W, HUD_H);
-  ctx.fillStyle = 'rgba(0,0,0,0.18)';
-  for (let x = 97; x < W; x += 113) ctx.fillRect(x, 0, 1, HUD_H); // emendas das tábuas
-  ctx.fillStyle = '#9c6a3c'; ctx.fillRect(0, 0, W, 1);
-  ctx.fillStyle = '#22140b'; ctx.fillRect(0, HUD_H - 2, W, 2);
-  ctx.fillStyle = '#c08a4a'; ctx.fillRect(0, HUD_H, W, 1);
+  drawHudBg(ctx);
 
   if (ui.towers) {
     const free = me.slots.includes(null);
@@ -467,8 +570,8 @@ function drawHud(ctx, g, ui) {
       card(ctx, BUTTONS[i], String(i + 1), def, free && pay, pay, inside(BUTTONS[i], mx, my));
     });
     const full = me.slots.length >= MAX_SLOTS, cost = SLOT_COSTS[me.slots.length - 1];
-    plank(ctx, SLOT_BTN, full ? t('slotsFull') : `${t('slot')} ${cost}`, null, !full && me.gold >= cost ? 'go' : 'off', inside(SLOT_BTN, mx, my));
-    plank(ctx, SELL_BTN, ui.selling ? t('sellPick') : t('sell'), null, ui.selling ? 'hot' : 'wood', inside(SELL_BTN, mx, my));
+    plank(ctx, SLOT_BTN, full ? t('slotsFull') : `${t('slot')} ${cost}`, !full && me.gold >= cost ? 'go' : 'off', inside(SLOT_BTN, mx, my), 'slot');
+    plank(ctx, SELL_BTN, ui.selling ? t('sellPick') : t('sell'), ui.selling ? 'hot' : 'wood', inside(SELL_BTN, mx, my), 'sell');
   } else {
     era.units.forEach((def, i) => {
       const pay = me.gold >= def.cost;
@@ -476,65 +579,147 @@ function drawHud(ctx, g, ui) {
     });
   }
 
-  // ouro e XP
-  coin(ctx, 397, 12, 3.4);
-  text(ctx, String(Math.floor(me.gold)), 403, 6.5, 10, '#f8d878', 'left', true, '#22140b');
-  const next = XP_TO_EVOLVE[me.era];
-  text(ctx, 'XP', 392, 20.5, 7, '#9fd4ff', 'left', true, '#22140b');
-  hpBar(ctx, 404, 23, 46, next ? me.xp / next : 1, '#5fb4f0', 4);
+  // ouro e XP num buraco escavado no painel
+  const R = RES_BOX;
+  inset(ctx, R.x, R.y, R.w, R.h);
+  icon(ctx, 'coin', R.x + 9, R.y + 8, 12);
+  text(ctx, String(Math.floor(me.gold)), R.x + 17, R.y + 1, 11, '#f8d878', 'left', true, OUT);
+  const next = XP_TO_EVOLVE[me.era], frac = next ? Math.min(1, me.xp / next) : 1;
+  icon(ctx, 'xp', R.x + 9, R.y + 21, 11);
+  const bx = R.x + 17, bw = R.w - 21;
+  hpBar(ctx, bx, R.y + 18, bw, frac, frac >= 1 ? '#8fe6ff' : '#4aa8ea', 5);
+  ctx.fillStyle = 'rgba(15,8,4,0.45)';
+  for (let k = 1; k < 10; k++) ctx.fillRect(bx + (bw * k) / 10, R.y + 18, P, 5); // marquinhas de 10%
 
-  const ready = me.specialT <= 0;
-  plank(ctx, SPECIAL_BTN, t('special'), ready ? t('spaceKey') : `${Math.ceil(me.specialT)}s`,
-    ready ? 'hot' : 'off', inside(SPECIAL_BTN, mx, my), ready ? 0 : 1 - me.specialT / SPECIAL_CD);
-  const can = canEvolve(me);
-  plank(ctx, EVOLVE_BTN, t('evolve'), !next ? t('maxEra') : can ? t('ready') : `${Math.floor(100 * me.xp / next)}%`,
-    can ? 'go' : 'off', inside(EVOLVE_BTN, mx, my), !next || can ? 0 : me.xp / next);
-  plank(ctx, TOGGLE_BTN, ui.towers ? t('units') : t('turrets'), '(T)', 'wood', inside(TOGGLE_BTN, mx, my));
+  const ready = me.specialT <= 0, can = canEvolve(me);
+  action(ctx, SPECIAL_BTN, 'special', t('special'), ready ? t('spaceKey') : `${Math.ceil(me.specialT)}s`,
+    ready ? 'hot' : 'off', inside(SPECIAL_BTN, mx, my), ready ? 1 : 1 - me.specialT / SPECIAL_CD, ready);
+  action(ctx, EVOLVE_BTN, 'evolve', t('evolve'), !next ? t('maxEra') : can ? t('ready') : `${Math.floor(100 * frac)}%`,
+    can ? 'go' : 'off', inside(EVOLVE_BTN, mx, my), !next || can ? 1 : frac, can);
+  action(ctx, TOGGLE_BTN, ui.towers ? 'unit' : 'turret', ui.towers ? t('units') : t('turrets'), 'T', 'wood', inside(TOGGLE_BTN, mx, my), 1, false);
 
-  // embaixo do painel: fila de treino com retrato, era e tempo
+  // plaquinha pendurada embaixo do painel: fila de treino
+  const qx = 5, qy = HUD_H + 1;
+  panel(ctx, qx, qy, QUEUE_MAX * 19 + 18, 22, '#5a3820', '#83562f', '#3a2212');
+  icon(ctx, 'time', qx + 8, qy + 11, 13);
   for (let i = 0; i < QUEUE_MAX; i++) {
-    const x = 6 + i * 19, y = HUD_H + 5;
-    box(ctx, x, y, 16, 16, '#7a5432', '#a8794a', '#5b3a22');
+    const x = qx + 17 + i * 19, y = qy + 3;
+    inset(ctx, x, y, 16, 16, '#3a2414');
     const def = me.queue[i];
     if (!def) continue;
     portrait(ctx, def, x + 1, y + 1, 14, false);
-    if (i === 0) hpBar(ctx, x, y + 18, 16, 1 - Math.max(0, me.trainT) / def.train, '#f2c14e', 2);
+    if (i === 0) {
+      const k = 1 - Math.max(0, me.trainT) / def.train;
+      ctx.fillStyle = '#f2c14e'; ctx.fillRect(x, y + 16 - 2, 16 * k, 2);
+    }
   }
-  text(ctx, `${nm(era)}  ${fmt(g.time)}`, W - 6, HUD_H + 5, 8, '#fff', 'right', true, '#22140b');
-  if (ui.muted) text(ctx, t('muted'), W - 6, HUD_H + 16, 7, '#ffd0c0', 'right', false, '#22140b');
-  if (ui.showFps) text(ctx, `${ui.fps} fps`, W - 6, HUD_H + 26, 7, '#fff', 'right', false, '#22140b');
+
+  // plaquinha da era e do tempo, no canto direito
+  ctx.font = font(8);
+  const label = `${nm(era)}  ·  ${fmt(g.time)}`, lw = ctx.measureText(label).width + 12;
+  const ex = W - 5 - lw, ey = HUD_H + 1;
+  panel(ctx, ex, ey, lw, 14, '#5a3820', '#83562f', '#3a2212');
+  text(ctx, label, ex + lw / 2, ey + 2, 8, '#fff4dc', 'center', true, OUT);
+  if (ui.muted) icon(ctx, 'mute', ex - 11, ey + 7, 13);
+  if (ui.showFps) text(ctx, `${ui.fps} fps`, W - 6, ey + 18, 7, '#fff', 'right', false, OUT);
 
   if (g.winner >= 0) {
-    overlay(ctx, g.winner === 0 ? t('win') : t('lose'), g.winner === 0 ? '#f8d878' : '#ff8a7a', [
-      `${nm(DIFFICULTIES[g.diff])}  ·  ${fmt(g.time)}  ·  ${me.kills} ${t('kills')}  ·  ${nm(era)}`,
-      ui.newRecord ? t('record') : '',
-      t('back'),
-    ]);
+    const win = g.winner === 0;
+    board(ctx, win ? t('win') : t('lose'), win ? '#f8d878' : '#ff8a7a', 270, 128, (x, y, w) => {
+      const row = y + 46;
+      statLine(ctx, x + w / 2, row, [['time', fmt(g.time)], ['kills', `${me.kills} ${t('kills')}`], ['evolve', nm(era)]]);
+      text(ctx, nm(DIFFICULTIES[g.diff]), x + w / 2, y + 30, 8, '#e8d2ad', 'center', false, OUT);
+      if (ui.newRecord) text(ctx, t('record'), x + w / 2, row + 20, 10, '#f8d878', 'center', true, OUT);
+      text(ctx, t('back'), x + w / 2, y + 128 - 20, 7.5, '#e8d2ad', 'center', false, OUT);
+    });
   } else if (ui.paused) {
-    overlay(ctx, t('paused'), '#fff', [t('resume')]);
+    board(ctx, t('paused'), '#fff4dc', 220, 76, (x, y, w) => {
+      text(ctx, t('resume'), x + w / 2, y + 46, 8, '#e8d2ad', 'center', false, OUT);
+    });
   }
   ctx.textAlign = 'left';
 }
 
-function overlay(ctx, title, color, lines) {
-  ctx.fillStyle = 'rgba(15,8,4,0.65)'; ctx.fillRect(0, 0, W, H);
-  text(ctx, title, W / 2, H / 2 - 52, 30, color, 'center', true, '#22140b');
-  lines.forEach((l, i) => text(ctx, l, W / 2, H / 2 - 6 + i * 15, 9, i === 1 ? '#f8d878' : '#f3e6cc', 'center', i === 1, '#22140b'));
+// linha de ícone + valor, centralizada
+function statLine(ctx, cx, y, items) {
+  ctx.font = font(9);
+  const widths = items.map(([, v]) => ctx.measureText(v).width + 16), total = widths.reduce((a, b) => a + b, 0) + (items.length - 1) * 10;
+  let x = cx - total / 2;
+  items.forEach(([ico, v], i) => {
+    icon(ctx, ico, x + 6, y + 6, 12);
+    text(ctx, v, x + 14, y + 0.5, 9, '#fff4dc', 'left', false, OUT);
+    x += widths[i] + 10;
+  });
 }
 
-export function drawMenu(ctx, ui) {
+// quadro de madeira no meio da tela (pausa, vitória, derrota)
+function board(ctx, title, color, w, h, body) {
+  ctx.fillStyle = 'rgba(15,8,4,0.6)'; ctx.fillRect(0, 0, W, H);
+  const x = Math.round((W - w) / 2), y = Math.round((H - h) / 2);
+  panel(ctx, x, y, w, h, '#6a4325', '#9a6a3c', '#3f2615');
+  inset(ctx, x + 5, y + 5, w - 10, h - 10, 'rgba(42,23,11,0.55)');
+  nail(ctx, x + 4, y + 4); nail(ctx, x + w - 4, y + 4); nail(ctx, x + 4, y + h - 4); nail(ctx, x + w - 4, y + h - 4);
+  text(ctx, title, x + w / 2, y + 7, 17, color, 'center', true, OUT);
+  body(x, y, w);
+}
+
+// logo do jogo em duas linhas, igual ao banner do itch
+function logo(ctx, cx, y) {
+  text(ctx, 'CAPIVARA', cx, y, 30, '#f8d878', 'center', true, '#3a1f0c');
+  text(ctx, 'OF WAR', cx, y + 36, 20, '#ff9b3d', 'center', true, '#3a1f0c');
+}
+
+// capivaras andando paradas no lugar, enfeitando as telas de menu
+function mascots(ctx) {
+  const i = Math.floor(performance.now() / 140) % 4, y = GROUND + 10;
+  for (const [x, s] of [[110, 0], [W - 110, 1]]) {
+    ctx.fillStyle = 'rgba(30,20,10,0.28)';
+    ctx.beginPath(); ctx.ellipse(x, y, 10, 2.2, 0, 0, Math.PI * 2); ctx.fill();
+    draw1(ctx, frame('tacape', s, 'walk', i), x, y, 0);
+  }
+}
+
+function menuBackdrop(ctx) {
   ctx.setTransform(RES, 0, 0, RES, 0, 0);
   ctx.textBaseline = 'top';
   drawBg(ctx, 0, 0);
-  ctx.fillStyle = 'rgba(15,8,4,0.45)'; ctx.fillRect(0, 0, W, H);
-  text(ctx, 'CAPIVARA OF WAR', W / 2, 42, 34, '#f8d878', 'center', true, '#3a1f0c');
-  text(ctx, t('pick'), W / 2, 98, 9, '#f3e6cc', 'center', false, '#22140b');
+  ctx.fillStyle = 'rgba(15,8,4,0.4)'; ctx.fillRect(0, 0, W, H);
+}
+
+export function drawMenu(ctx, ui) {
+  menuBackdrop(ctx);
+  logo(ctx, W / 2, 22);
+  mascots(ctx);
+  text(ctx, t('pick'), W / 2, 104, 9, '#f3e6cc', 'center', false, OUT);
   MENU_BTNS.forEach((b, i) => {
-    const r = ui.records[i];
-    plank(ctx, b, `${i + 1}  ${nm(DIFFICULTIES[i])}`, r ? `${t('best')} ${fmt(r)}` : t('noWin'), 'wood', inside(b, ui.mx, ui.my));
+    const r = ui.records[i], hover = inside(b, ui.mx, ui.my), c = hover ? TONES.wood[1] : TONES.wood[0];
+    panel(ctx, b.x, b.y, b.w, b.h, c, TONES.wood[1], TONES.wood[2]);
+    nail(ctx, b.x + 4, b.y + b.h / 2); nail(ctx, b.x + b.w - 4, b.y + b.h / 2);
+    text(ctx, `${i + 1}`, b.x + 14, b.y + 5, 11, '#f8d878', 'center', true, OUT);
+    text(ctx, nm(DIFFICULTIES[i]), b.x + 26, b.y + 3, 9, '#fff4dc', 'left', true, OUT);
+    if (r) { icon(ctx, 'time', b.x + 30, b.y + 19, 8); text(ctx, `${t('best')} ${fmt(r)}`, b.x + 36, b.y + 14.5, 7, '#ffe9a8', 'left', false, OUT); }
+    else text(ctx, t('noWin'), b.x + 26, b.y + 14.5, 7, '#e8d2ad', 'left', false, OUT);
   });
-  plank(ctx, LANG_BTN, t('lang'), null, 'wood', inside(LANG_BTN, ui.mx, ui.my));
-  text(ctx, t('help'), W / 2, H - 18, 7, '#f3e6cc', 'center', false, '#22140b');
-  if (ui.showFps) text(ctx, `${ui.fps} fps`, W - 6, 6, 7, '#fff', 'right', false, '#22140b');
+  plank(ctx, LANG_BTN, t('lang'), 'wood', inside(LANG_BTN, ui.mx, ui.my));
+  text(ctx, t('help'), W / 2, H - 16, 7, '#f3e6cc', 'center', false, OUT);
+  if (ui.showFps) text(ctx, `${ui.fps} fps`, W - 6, 6, 7, '#fff', 'right', false, OUT);
+  ctx.textAlign = 'left';
+}
+
+// primeira tela: escolher o idioma (sempre bilíngue)
+export function drawLangPick(ctx, ui) {
+  menuBackdrop(ctx);
+  logo(ctx, W / 2, 30);
+  mascots(ctx);
+  text(ctx, 'Escolha o idioma  ·  Choose your language', W / 2, 116, 9, '#f3e6cc', 'center', false, OUT);
+  LANG_PICK.forEach((b, i) => {
+    const hover = inside(b, ui.mx, ui.my), on = getLang() === (i ? 'en' : 'pt');
+    const c = hover ? TONES.wood[1] : TONES.wood[0];
+    panel(ctx, b.x, b.y, b.w, b.h, c, TONES.wood[1], TONES.wood[2]);
+    if (on) { ctx.strokeStyle = '#f8d878'; ctx.lineWidth = 2 * P; ctx.strokeRect(b.x - 4 * P, b.y - 4 * P, b.w + 8 * P, b.h + 8 * P); }
+    nail(ctx, b.x + 4, b.y + 4); nail(ctx, b.x + b.w - 4, b.y + 4);
+    text(ctx, i ? 'English' : 'Português', b.x + b.w / 2, b.y + 8, 14, '#fff4dc', 'center', true, OUT);
+    text(ctx, i ? 'press 2' : 'aperte 1', b.x + b.w / 2, b.y + 30, 7.5, '#ffe9a8', 'center', false, OUT);
+  });
   ctx.textAlign = 'left';
 }
