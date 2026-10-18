@@ -1,9 +1,10 @@
 import { W, H, RES, WORLD, HUD_H, TURRET_W, TURRET_H, slotY } from './data.js';
 import { newGame, update, train, buyTurret, buySlot, sellTurret, evolve, special } from './battle.js';
 import {
-  draw, drawMenu, ready, effect, BUTTONS, SLOT_BTN, SELL_BTN, TOGGLE_BTN, SPECIAL_BTN, EVOLVE_BTN, MENU_BTNS,
+  draw, drawMenu, ready, effect, LANG_BTN, BUTTONS, SLOT_BTN, SELL_BTN, TOGGLE_BTN, SPECIAL_BTN, EVOLVE_BTN, MENU_BTNS,
 } from './render.js';
 import * as audio from './audio.js';
+import { toggleLang } from './i18n.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -85,6 +86,7 @@ canvas.addEventListener('pointerdown', (e) => {
   if (!g) {
     const i = MENU_BTNS.findIndex((b) => inside(b, x, y));
     if (i >= 0) start(i);
+    else if (inside(LANG_BTN, x, y)) toggleLang();
     return;
   }
   if (g.winner >= 0) { g = null; return; }
@@ -118,6 +120,7 @@ addEventListener('keydown', (e) => {
   keys.add(e.code);
   audio.init();
   if (e.code === 'KeyM') { ui.muted = audio.toggleMute(); return; }
+  if (e.code === 'KeyL') { toggleLang(); return; }
   const n = e.code.startsWith('Digit') ? +e.code.at(-1) - 1 : -1;
   if (e.code === 'F3') { ui.showFps = !ui.showFps; e.preventDefault(); return; }
   if (!g) { if (n >= 0 && n < MENU_BTNS.length) start(n); return; }

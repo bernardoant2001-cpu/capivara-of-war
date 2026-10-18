@@ -3,6 +3,7 @@ import {
   MAX_SLOTS, SLOT_COSTS, TURRET_W, TURRET_H, slotY,
 } from './data.js';
 import { ATTACK, WALK, canEvolve, DYING_TIME } from './battle.js';
+import { t, nm } from './i18n.js';
 
 // Sprites: um atlas por era que já tem arte + versão branca de cada um pro piscar de dano.
 const atlases = [], whites = [], bgs = [];
@@ -73,7 +74,8 @@ export const SELL_BTN = { x: 316, y: 21, w: 70, h: 13 };
 export const SPECIAL_BTN = { x: 456, y: 6, w: 60, h: 28 };
 export const EVOLVE_BTN = { x: 520, y: 6, w: 60, h: 28 };
 export const TOGGLE_BTN = { x: 584, y: 6, w: 52, h: 28 };
-export const MENU_BTNS = DIFFICULTIES.map((_, i) => ({ x: W / 2 - 80, y: 130 + i * 36, w: 160, h: 28 }));
+export const MENU_BTNS = DIFFICULTIES.map((_, i) => ({ x: W / 2 - 80, y: 124 + i * 34, w: 160, h: 28 }));
+export const LANG_BTN = { x: W / 2 - 60, y: 266, w: 120, h: 16 };
 
 // fundo: a imagem cobre o campo inteiro (WORLD), por frame é só 1 drawImage
 function drawBg(ctx, cam, era) {
@@ -422,7 +424,7 @@ function card(ctx, b, key, def, ok, canPay, hover) {
   portrait(ctx, def, b.x + 2, b.y + 2, 26, !ok);
   ctx.fillStyle = '#2a180c'; ctx.fillRect(b.x, b.y, 7, 8);
   text(ctx, key, b.x + 3.5, b.y + 0.5, 7, '#f2c14e', 'center', true);
-  text(ctx, def.name, b.x + 31, b.y + 3.5, 8, ok ? '#2a180c' : '#4a3d2e', 'left', true, null, b.w - 33);
+  text(ctx, nm(def), b.x + 31, b.y + 3.5, 8, ok ? '#2a180c' : '#4a3d2e', 'left', true, null, b.w - 33);
   coin(ctx, b.x + 34, b.y + 21);
   text(ctx, String(def.cost), b.x + 39, b.y + 16, 9, canPay ? '#2a180c' : '#b3261e', 'left', true);
 }
@@ -465,8 +467,8 @@ function drawHud(ctx, g, ui) {
       card(ctx, BUTTONS[i], String(i + 1), def, free && pay, pay, inside(BUTTONS[i], mx, my));
     });
     const full = me.slots.length >= MAX_SLOTS, cost = SLOT_COSTS[me.slots.length - 1];
-    plank(ctx, SLOT_BTN, full ? 'Vagas 4/4' : `+Vaga ${cost}`, null, !full && me.gold >= cost ? 'go' : 'off', inside(SLOT_BTN, mx, my));
-    plank(ctx, SELL_BTN, ui.selling ? 'Clica na torre' : 'Vender', null, ui.selling ? 'hot' : 'wood', inside(SELL_BTN, mx, my));
+    plank(ctx, SLOT_BTN, full ? t('slotsFull') : `${t('slot')} ${cost}`, null, !full && me.gold >= cost ? 'go' : 'off', inside(SLOT_BTN, mx, my));
+    plank(ctx, SELL_BTN, ui.selling ? t('sellPick') : t('sell'), null, ui.selling ? 'hot' : 'wood', inside(SELL_BTN, mx, my));
   } else {
     era.units.forEach((def, i) => {
       const pay = me.gold >= def.cost;
@@ -482,12 +484,12 @@ function drawHud(ctx, g, ui) {
   hpBar(ctx, 404, 23, 46, next ? me.xp / next : 1, '#5fb4f0', 4);
 
   const ready = me.specialT <= 0;
-  plank(ctx, SPECIAL_BTN, 'Especial', ready ? 'Espaço' : `${Math.ceil(me.specialT)}s`,
+  plank(ctx, SPECIAL_BTN, t('special'), ready ? t('spaceKey') : `${Math.ceil(me.specialT)}s`,
     ready ? 'hot' : 'off', inside(SPECIAL_BTN, mx, my), ready ? 0 : 1 - me.specialT / SPECIAL_CD);
   const can = canEvolve(me);
-  plank(ctx, EVOLVE_BTN, 'Evoluir', !next ? 'era máx' : can ? 'E: pronto!' : `${Math.floor(100 * me.xp / next)}%`,
+  plank(ctx, EVOLVE_BTN, t('evolve'), !next ? t('maxEra') : can ? t('ready') : `${Math.floor(100 * me.xp / next)}%`,
     can ? 'go' : 'off', inside(EVOLVE_BTN, mx, my), !next || can ? 0 : me.xp / next);
-  plank(ctx, TOGGLE_BTN, ui.towers ? 'Unidades' : 'Torres', '(T)', 'wood', inside(TOGGLE_BTN, mx, my));
+  plank(ctx, TOGGLE_BTN, ui.towers ? t('units') : t('turrets'), '(T)', 'wood', inside(TOGGLE_BTN, mx, my));
 
   // embaixo do painel: fila de treino com retrato, era e tempo
   for (let i = 0; i < QUEUE_MAX; i++) {
@@ -498,18 +500,18 @@ function drawHud(ctx, g, ui) {
     portrait(ctx, def, x + 1, y + 1, 14, false);
     if (i === 0) hpBar(ctx, x, y + 18, 16, 1 - Math.max(0, me.trainT) / def.train, '#f2c14e', 2);
   }
-  text(ctx, `${era.name}  ${fmt(g.time)}`, W - 6, HUD_H + 5, 8, '#fff', 'right', true, '#22140b');
-  if (ui.muted) text(ctx, 'som desligado (M)', W - 6, HUD_H + 16, 7, '#ffd0c0', 'right', false, '#22140b');
+  text(ctx, `${nm(era)}  ${fmt(g.time)}`, W - 6, HUD_H + 5, 8, '#fff', 'right', true, '#22140b');
+  if (ui.muted) text(ctx, t('muted'), W - 6, HUD_H + 16, 7, '#ffd0c0', 'right', false, '#22140b');
   if (ui.showFps) text(ctx, `${ui.fps} fps`, W - 6, HUD_H + 26, 7, '#fff', 'right', false, '#22140b');
 
   if (g.winner >= 0) {
-    overlay(ctx, g.winner === 0 ? 'VITÓRIA!' : 'DERROTA...', g.winner === 0 ? '#f8d878' : '#ff8a7a', [
-      `${DIFFICULTIES[g.diff].name}  ·  ${fmt(g.time)}  ·  ${me.kills} abates  ·  ${era.name}`,
-      ui.newRecord ? 'NOVO RECORDE!' : '',
-      'clique ou Enter pra voltar ao menu',
+    overlay(ctx, g.winner === 0 ? t('win') : t('lose'), g.winner === 0 ? '#f8d878' : '#ff8a7a', [
+      `${nm(DIFFICULTIES[g.diff])}  ·  ${fmt(g.time)}  ·  ${me.kills} ${t('kills')}  ·  ${nm(era)}`,
+      ui.newRecord ? t('record') : '',
+      t('back'),
     ]);
   } else if (ui.paused) {
-    overlay(ctx, 'PAUSADO', '#fff', ['P ou Esc pra continuar']);
+    overlay(ctx, t('paused'), '#fff', [t('resume')]);
   }
   ctx.textAlign = 'left';
 }
@@ -526,12 +528,13 @@ export function drawMenu(ctx, ui) {
   drawBg(ctx, 0, 0);
   ctx.fillStyle = 'rgba(15,8,4,0.45)'; ctx.fillRect(0, 0, W, H);
   text(ctx, 'CAPIVARA OF WAR', W / 2, 42, 34, '#f8d878', 'center', true, '#3a1f0c');
-  text(ctx, 'escolha a dificuldade', W / 2, 98, 9, '#f3e6cc', 'center', false, '#22140b');
+  text(ctx, t('pick'), W / 2, 98, 9, '#f3e6cc', 'center', false, '#22140b');
   MENU_BTNS.forEach((b, i) => {
     const r = ui.records[i];
-    plank(ctx, b, `${i + 1}  ${DIFFICULTIES[i].name}`, r ? `recorde ${fmt(r)}` : 'sem vitória ainda', 'wood', inside(b, ui.mx, ui.my));
+    plank(ctx, b, `${i + 1}  ${nm(DIFFICULTIES[i])}`, r ? `${t('best')} ${fmt(r)}` : t('noWin'), 'wood', inside(b, ui.mx, ui.my));
   });
-  text(ctx, 'M: som  ·  T: torres  ·  E: evoluir  ·  Espaço: especial  ·  F3: fps', W / 2, H - 18, 7, '#f3e6cc', 'center', false, '#22140b');
+  plank(ctx, LANG_BTN, t('lang'), null, 'wood', inside(LANG_BTN, ui.mx, ui.my));
+  text(ctx, t('help'), W / 2, H - 18, 7, '#f3e6cc', 'center', false, '#22140b');
   if (ui.showFps) text(ctx, `${ui.fps} fps`, W - 6, 6, 7, '#fff', 'right', false, '#22140b');
   ctx.textAlign = 'left';
 }

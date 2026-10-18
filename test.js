@@ -148,9 +148,10 @@ const game = () => newGame(1, false);
   assert.ok(g.sides[0].specialT > SPECIAL_CD - 4);
 }
 
-// Nome cabe no botão (12 caracteres com o número da tecla).
+// Nome cabe no botão (12 caracteres com o número da tecla; inglês tem um de folga, o botão aperta o texto).
 for (const era of ERAS) {
   for (const d of [...era.units, ...era.turrets]) assert.ok(`1 ${d.name}`.length <= 12, `nome grande: ${d.name}`);
+  for (const d of [...era.units, ...era.turrets]) assert.ok(d.en && `1 ${d.en}`.length <= 13, `nome em inglês faltando ou grande: ${d.en}`);
 }
 
 // Partida termina: estilingueiros sem oposição derrubam a base inimiga.

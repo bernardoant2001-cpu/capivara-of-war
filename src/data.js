@@ -30,10 +30,10 @@ export const slotY = (i) => GROUND - BASE_H + 8 + i * 22;
 
 // income: multiplica a renda e o ouro de abate da IA. evolveEvery: a IA sobe de era a cada X segundos.
 export const DIFFICULTIES = [
-  { name: 'Fácil',      income: 0.7, evolveEvery: 360, maxUnits: 8 },
-  { name: 'Normal',     income: 1.0, evolveEvery: 300, maxUnits: 12 },
-  { name: 'Difícil',    income: 1.4, evolveEvery: 240, maxUnits: 16 },
-  { name: 'Impossível', income: 2.0, evolveEvery: 180, maxUnits: 20 },
+  { name: 'Fácil',      en: 'Easy',       income: 0.7, evolveEvery: 360, maxUnits: 8 },
+  { name: 'Normal',     en: 'Normal',     income: 1.0, evolveEvery: 300, maxUnits: 12 },
+  { name: 'Difícil',    en: 'Hard',       income: 1.4, evolveEvery: 240, maxUnits: 16 },
+  { name: 'Impossível', en: 'Impossible', income: 2.0, evolveEvery: 180, maxUnits: 20 },
 ];
 
 // Stats da era 1. Cada era seguinte: custo ×3, vida e dano ×2.6, alcance de quem atira +10%.
@@ -43,7 +43,7 @@ const UNIT_BASE = [
   { cost: 100, hp: 300, dmg: 40, range: 22,  cd: 1.5, speed: 24, train: 4.0, w: 30, h: 28 },
 ];
 const HEAVY_GUN = { range: 150, splash: 24, ranged: true }; // pesada da era 3 em diante atira de longe
-const SUPREMA = { name: 'Suprema', cost: 25000, hp: 45000, dmg: 2500, range: 30, splash: 40, cd: 1.2, speed: 20, train: 10, w: 34, h: 34 };
+const SUPREMA = { name: 'Suprema', en: 'Supreme', cost: 25000, hp: 45000, dmg: 2500, range: 30, splash: 40, cd: 1.2, speed: 20, train: 10, w: 34, h: 34 };
 
 // Torres: alcance contado a partir da frente da base
 const TURRET_BASE = [
@@ -55,22 +55,27 @@ const TURRET_BASE = [
 const ERA_INFO = [
   {
     name: 'Era da Lama', units: ['Tacape', 'Estilingue', 'Megatério'], turrets: ['Estilingão', 'Lança-Coco', 'Catapulta'], special: 'Chuva de Cocos',
+    en: { name: 'Mud Age', units: ['Club', 'Slingshot', 'Sloth Rider'], turrets: ['Big Sling', 'Coco Cannon', 'Catapult'], special: 'Coconut Rain' },
     sprites: { units: ['tacape', 'estilingue', 'megaterio'], turrets: ['t_estilingao', 't_lancacoco', 't_catapulta'], base: 'base' },
   },
   {
     name: 'Medieval', units: ['Espadachim', 'Arqueira', 'Cavaleira'], turrets: ['Besta', 'Arco 3x', 'Caldeirão'], special: 'Chuva de Flechas',
+    en: { name: 'Medieval', units: ['Swordsman', 'Archer', 'Knight'], turrets: ['Crossbow', 'Triple Bow', 'Cauldron'], special: 'Arrow Rain' },
     sprites: { units: ['espadachim', 'arqueira', 'cavaleira'], turrets: ['t_besta', 't_arco', 't_caldeirao'], base: 'castelo' },
   },
   {
     name: 'Navegações', units: ['Duelista', 'Mosquete', 'Canhoneira'], turrets: ['Canhão', 'Mosquetes', 'Morteiro'], special: 'Bombardeio',
+    en: { name: 'Age of Sail', units: ['Duelist', 'Musketeer', 'Cannoneer'], turrets: ['Cannon', 'Muskets', 'Mortar'], special: 'Bombardment' },
     sprites: { units: ['duelista', 'mosquete', 'canhoneira'], turrets: ['t_canhao', 't_mosquetes', 't_morteiro'], base: 'forte' },
   },
   {
     name: 'Moderna', units: ['Soldado', 'Metralha', 'Capitanque'], turrets: ['Metralha', 'Foguetes', 'Torre 2x'], special: 'Capiaviões',
+    en: { name: 'Modern', units: ['Soldier', 'Gunner', 'Capytank'], turrets: ['Machine Gun', 'Rockets', 'Twin Turret'], special: 'Air Strike' },
     sprites: { units: ['soldado', 'metralha', 'capitanque'], turrets: ['t_metralha', 't_foguetes', 't_dupla'], base: 'bunker' },
   },
   {
     name: 'Futuro', units: ['Sabre', 'Blaster', 'Capimecha'], turrets: ['Laser', 'Titânio', 'Canhão Íon'], special: 'Laranja Sagrada',
+    en: { name: 'Future', units: ['Saber', 'Blaster', 'Capymech'], turrets: ['Laser', 'Titanium', 'Ion Cannon'], special: 'Holy Orange' },
     sprites: { units: ['sabre', 'blaster', 'capimecha', 'suprema'], turrets: ['t_laser', 't_titanio', 't_ion'], base: 'cidadela' },
   },
 ];
@@ -80,7 +85,7 @@ const nice = (x) => (x < 100 ? Math.round(x) : Math.round(x / 5) * 5);
 export const ERAS = ERA_INFO.map((info, k) => {
   const c = 3 ** k, p = 2.6 ** k;
   const units = UNIT_BASE.map((b, i) => {
-    const u = { ...b, ...(i === 2 && k >= 2 ? HEAVY_GUN : null), name: info.units[i], sprite: info.sprites?.units[i], type: i, era: k };
+    const u = { ...b, ...(i === 2 && k >= 2 ? HEAVY_GUN : null), name: info.units[i], en: info.en.units[i], sprite: info.sprites?.units[i], type: i, era: k };
     u.cost = nice(b.cost * c);
     u.hp = nice(b.hp * p);
     u.dmg = nice(b.dmg * p);
@@ -90,11 +95,12 @@ export const ERAS = ERA_INFO.map((info, k) => {
   if (k === ERA_INFO.length - 1) units.push({ ...SUPREMA, sprite: info.sprites?.units[3], type: 3, era: k });
   return {
     name: info.name,
+    en: info.en.name,
     art: !!info.sprites, // tem atlas e fundo próprios (assets/eraN.png, bgN.webp)
     baseSprite: info.sprites?.base,
     baseHp: nice(3000 * p),
     units,
-    turrets: TURRET_BASE.map((b, i) => ({ ...b, name: info.turrets[i], sprite: info.sprites?.turrets[i], type: i, era: k, cost: nice(b.cost * c), dmg: nice(b.dmg * p) })),
-    special: { name: info.special, dmg: nice(60 * p), count: 15, radius: 16 },
+    turrets: TURRET_BASE.map((b, i) => ({ ...b, name: info.turrets[i], en: info.en.turrets[i], sprite: info.sprites?.turrets[i], type: i, era: k, cost: nice(b.cost * c), dmg: nice(b.dmg * p) })),
+    special: { name: info.special, en: info.en.special, dmg: nice(60 * p), count: 15, radius: 16 },
   };
 });
