@@ -12,6 +12,8 @@ npx serve
 
 Testes da lógica: `node test.js`
 
+Publicar no itch.io (precisa do [butler](https://itch.io/docs/butler/) logado): `.\publicar-itch.ps1`
+
 Atalhos pra testar: `?era=2` começa os dois lados na era 2, `?ouro=5000` começa com 5000 de ouro (dá pra juntar: `?era=3&ouro=9000`).
 
 ## Controles
