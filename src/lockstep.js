@@ -33,8 +33,11 @@ export function stateHash(g) {
 
 // me: 0 (quem criou a sala, Clã do Rio) ou 1 (quem entrou, Clã do Pântano)
 // send(msg): manda pro outro lado; o net.js entrega o que chegar em receive(msg)
-export function createMatch(seed, me, send) {
-  const g = newGame(1, false, 'pvp', seed);
+// rules: as regras que o anfitrião escolheu (ver newGame)
+export const COUNTDOWN = 3;
+export function createMatch(seed, me, send, rules) {
+  const g = newGame(1, false, 'pvp', seed, rules);
+  g.countdown = COUNTDOWN;
   const cmds = new Map(); // tick -> [[lado, ação, argumento]]
   const myHashes = new Map(), theirHashes = new Map();
   let remoteUpTo = DELAY - 1; // até que tick já temos todos os comandos do outro (antes de DELAY ninguém consegue agir)

@@ -251,4 +251,26 @@ for (const era of ERAS) {
   assert.ok(A.g.sides[0].units.length + A.g.sides[1].units.length + A.g.sides[0].kills > 0, 'ninguém treinou nada');
 }
 
+// Regras do online: era inicial, ritmo rápido, contagem e morte súbita.
+{
+  const g = newGame(1, false, 'pvp', 7, { era: 2, fast: true, sudden: 1 });
+  assert.equal(g.sides[0].era, 2); assert.equal(g.sides[1].era, 2);
+  assert.equal(g.sides[0].gold, 175 * 9);
+  assert.equal(g.fx.length, 0, 'evolução do começo não pode tocar som');
+  g.countdown = 3;
+  assert.ok(train(g, 0, 0), 'na contagem dá pra encher a fila');
+  for (let i = 0; i < 60 * 2.9; i++) update(g, 1 / 60);
+  assert.equal(g.time, 0); assert.equal(g.sides[0].units.length, 0, 'ninguém sai antes do LUTA');
+  for (let i = 0; i < 60 * 3; i++) update(g, 1 / 60);
+  assert.equal(g.sides[0].units.length, 1);
+  const slow = newGame(1, false, 'pvp', 7);
+  for (let i = 0; i < 600; i++) { update(g, 1 / 60); update(slow, 1 / 60); }
+  assert.ok(g.sides[1].gold - 175 * 9 > (slow.sides[1].gold - 175) * 9 * 1.5, 'ritmo rápido rende mais');
+  // morte súbita: quem tomou dano antes cai primeiro
+  g.sides[1].base.hp -= 50;
+  for (let i = 0; i < 60 * 200 && g.winner < 0; i++) update(g, 1 / 60);
+  assert.ok(g.sudden); assert.equal(g.winner, 0);
+  assert.ok(g.time < 60 + 120, 'morte súbita demorou: ' + g.time);
+}
+
 console.log('ok');

@@ -72,6 +72,7 @@ const TURRET_COLORS = ['#a89a7c', '#c9a14a', '#77706a'];
 const ERA_COLORS = ['#5a3d1e', '#b8bec8', '#2f6e3a', '#6b7a2f', '#3ff0ff', '#c04cff']; // faixa na cabeça
 
 let mine = 0;
+const baseTop = [0, 0];
 
 export const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
@@ -91,7 +92,14 @@ export const BACK_BTN = { x: W / 2 - 55, y: 338, w: 110, h: 14 };
 const ACH_CELL = (i) => ({ x: 18 + (i % 3) * 204, y: 40 + Math.floor(i / 3) * 59, w: 196, h: 52 });
 export const LANG_PICK = [{ x: W / 2 - 150, y: 140, w: 140, h: 46 }, { x: W / 2 + 10, y: 140, w: 140, h: 46 }];
 export const ONLINE_BTN = { x: W / 2 - 60, y: 284, w: 120, h: 15 };
-export const CODE_BOX = { x: W / 2 - 58, y: 128, w: 116, h: 34 };
+export const CODE_BOX = { x: W / 2 - 58, y: 112, w: 116, h: 34 };
+export const NICK_BTN = { x: W / 2 - 80, y: 84, w: 160, h: 16 };
+export const RULE_BTNS = [0, 1, 2].map((i) => ({ x: W / 2 - 100, y: 196 + i * 21, w: 200, h: 17 }));
+export const START_BTN = { x: W / 2 - 70, y: 264, w: 140, h: 22 };
+export const EMO_BTNS = [0, 1, 2, 3, 4, 5].map((i) => ({ x: W / 2 - 75 + i * 25, y: H - 26, w: 23, h: 23 }));
+export const REMATCH_BTN = { x: 178, y: 238, w: 136, h: 17 };
+export const END_MENU_BTN = { x: 326, y: 238, w: 136, h: 17 };
+export const SUDDEN = [0, 5, 10]; // opções de morte súbita, em minutos
 
 // fundo: a imagem cobre o campo inteiro (WORLD), por frame é só 1 drawImage
 function drawBg(ctx, cam, era) {
@@ -144,6 +152,7 @@ export function draw(ctx, g, ui) {
 
   drawParticles(ctx, dt, cam);
   ctx.setTransform(RES, 0, 0, RES, 0, 0);
+  if (g.mode === 'pvp') drawNames(ctx, g, ui, cam);
   drawHud(ctx, g, ui);
 }
 
@@ -263,7 +272,8 @@ function drawBase(ctx, g, s, cam, ui) {
   const side = g.sides[s], b = side.base, d = side.dir, cx = b.x - cam;
   const base = ERAS[artEra(side.era, atlases)].baseSprite;
   const h = sprite(ctx, base, s, cx, GROUND + 12, b.hitT > 0 ? 0.25 : 0);
-  hpBar(ctx, Math.round(cx - b.w / 2), GROUND + 12 - h - 8, b.w, b.hp / b.maxHp, null, 4);
+  baseTop[s] = GROUND + 12 - h - 8;
+  hpBar(ctx, Math.round(cx - b.w / 2), baseTop[s], b.w, b.hp / b.maxHp, null, 4);
 
   // sacada de madeira saindo da parede em cada vaga: plataforma + mão-francesa cravada na parede
   const wall = b.x + d * (b.w / 2 - 6) - cam, end = b.x + d * (b.w / 2 + 13) - cam;
@@ -637,7 +647,8 @@ function drawHud(ctx, g, ui) {
   panel(ctx, ex, ey, lw, 14, '#5a3820', '#83562f', '#3a2212');
   text(ctx, label, ex + lw / 2, ey + 2, 8, '#fff4dc', 'center', true, OUT);
   if (ui.muted) icon(ctx, 'mute', ex - 11, ey + 7, 13);
-  if (ui.showFps) text(ctx, `${ui.fps} fps`, W - 6, ey + 18, 7, '#fff', 'right', false, OUT);
+  if (ui.showFps) text(ctx, `${ui.fps} fps`, W - 6, ey + (g.mode === 'pvp' ? 44 : 18), 7, '#fff', 'right', false, OUT);
+  if (g.mode === 'pvp') drawPvpHud(ctx, g, ui, ey + 17);
   if (g.mode === 'endless' && !g.waveOn && g.winner < 0) {
     text(ctx, `${t('nextWave')} ${Math.max(0, Math.ceil(g.waveT))}s`, W - 6, ey + 18, 8, '#ffe9a8', 'right', false, OUT);
   }
@@ -657,6 +668,8 @@ function drawHud(ctx, g, ui) {
       if (ui.newRecord) text(ctx, t('record'), x + w / 2, row + 20, 10, '#f8d878', 'center', true, OUT);
       text(ctx, t('backMenu'), x + w / 2, y + 128 - 20, 7.5, '#e8d2ad', 'center', false, OUT);
     });
+  } else if (g.winner >= 0 && g.mode === 'pvp') {
+    drawPvpEnd(ctx, g, ui);
   } else if (g.winner >= 0) {
     const win = g.winner === mine;
     board(ctx, win ? t('win') : t('lose'), win ? '#f8d878' : '#ff8a7a', 270, 128, (x, y, w) => {
@@ -810,34 +823,150 @@ function drawToasts(ctx, ui) {
   });
 }
 
-// tela do online: criar sala ou entrar com o código do amigo
+// ---------- online ----------
+
+const RULE_LABELS = (r) => [
+  `${t('ruleEra')}: ${nm(ERAS[r.era])}`,
+  `${t('rulePace')}: ${r.fast ? t('fast') : t('normal')}`,
+  `${t('ruleSudden')}: ${r.sudden ? `${r.sudden} min` : t('off')}`,
+];
+
+// tela do online: apelido, criar sala ou entrar, e o saguão com as regras
 export function drawOnline(ctx, ui) {
   menuBackdrop(ctx);
   mascots(ctx);
-  const n = ui.net;
-  text(ctx, t('onlineTitle'), W / 2, 22, 20, '#f8d878', 'center', true, OUT);
-  text(ctx, t('onlineHelp'), W / 2, 52, 8, '#f3e6cc', 'center', false, OUT);
+  const n = ui.net, mx = ui.mx, my = ui.my;
+  text(ctx, t('onlineTitle'), W / 2, 18, 20, '#f8d878', 'center', true, OUT);
+  text(ctx, t('onlineHelp'), W / 2, 46, 8, '#f3e6cc', 'center', false, OUT);
   if (!n.role) {
+    const edit = n.editing === 'nick', blink = edit && performance.now() % 1000 < 500 ? '_' : '';
+    plank(ctx, NICK_BTN, `${t('nick')}: ${ui.nick}${blink}`, edit ? 'hot' : 'wood', inside(NICK_BTN, mx, my), 'unit');
+    text(ctx, edit ? t('nickDone') : t('nickEdit'), W / 2, NICK_BTN.y + 19, 7, '#e8d2ad', 'center', false, OUT);
     LANG_PICK.forEach((b, i) => {
-      const hover = inside(b, ui.mx, ui.my);
+      const hover = inside(b, mx, my);
       panel(ctx, b.x, b.y, b.w, b.h, hover ? TONES.wood[1] : TONES.wood[0], TONES.wood[1], TONES.wood[2]);
       nail(ctx, b.x + 4, b.y + 4); nail(ctx, b.x + b.w - 4, b.y + 4);
       text(ctx, i ? t('join') : t('host'), b.x + b.w / 2, b.y + 9, 12, '#fff4dc', 'center', true, OUT, b.w - 12);
       text(ctx, i ? t('press2') : t('press1'), b.x + b.w / 2, b.y + 30, 7.5, '#ffe9a8', 'center', false, OUT);
     });
+    if (n.status) text(ctx, t(n.status), W / 2, 196, 9, n.error ? '#ff8a7a' : '#fff4dc', 'center', true, OUT);
   } else {
-    const B = CODE_BOX;
-    text(ctx, n.role === 'host' ? t('roomCode') : t('typeCode'), W / 2, B.y - 18, 9, '#f3e6cc', 'center', false, OUT);
+    const B = CODE_BOX, host = n.role === 'host', lobby = n.phase === 'lobby';
+    text(ctx, host ? t('roomCode') : lobby ? `${t('roomOf')} ${ui.rival}` : t('typeCode'), W / 2, B.y - 16, 9, '#f3e6cc', 'center', false, OUT);
     panel(ctx, B.x, B.y, B.w, B.h, TONES.wood[0], TONES.wood[1], TONES.wood[2]);
     for (let i = 0; i < 4; i++) {
       const x = B.x + 6 + i * 27;
       inset(ctx, x, B.y + 5, 23, B.h - 10, '#3a2414');
-      const c = n.code[i] || (n.role === 'join' && i === n.code.length && performance.now() % 1000 < 500 ? '_' : '');
+      const c = n.code[i] || (n.role === 'join' && !lobby && i === n.code.length && performance.now() % 1000 < 500 ? '_' : '');
       text(ctx, c, x + 11.5, B.y + 6, 20, '#f8d878', 'center', true, OUT);
     }
-    if (n.role === 'join' && !n.busy) text(ctx, t('enterJoin'), W / 2, B.y + B.h + 8, 7.5, '#ffe9a8', 'center', false, OUT);
-    if (n.status) text(ctx, t(n.status), W / 2, B.y + B.h + 22, 9, n.error ? '#ff8a7a' : '#fff4dc', 'center', true, OUT);
+    let status = n.status && t(n.status), color = n.error ? '#ff8a7a' : '#fff4dc';
+    if (lobby) { status = host ? `${ui.rival} ${t('joined')}` : `${t('waitHost')} ${ui.rival}...`; color = '#a8f07a'; }
+    if (n.role === 'join' && !lobby && !n.busy) text(ctx, t('enterJoin'), W / 2, B.y + B.h + 6, 7.5, '#ffe9a8', 'center', false, OUT);
+    if (status) text(ctx, status, W / 2, B.y + B.h + 19, 9, color, 'center', true, OUT);
+    if (host || lobby) { // regras: o anfitrião escolhe, quem entrou só vê
+      text(ctx, host ? t('rulesHost') : t('rules'), W / 2, RULE_BTNS[0].y - 13, 7.5, '#e8d2ad', 'center', false, OUT);
+      RULE_LABELS(n.rules).forEach((label, i) => plank(ctx, RULE_BTNS[i], host ? `${i + 1}  ${label}` : label, host ? 'wood' : 'off', host && inside(RULE_BTNS[i], mx, my)));
+    }
+    if (host && lobby) plank(ctx, START_BTN, t('start'), 'go', inside(START_BTN, mx, my));
   }
-  plank(ctx, BACK_BTN, t('back'), 'wood', inside(BACK_BTN, ui.mx, ui.my));
+  plank(ctx, BACK_BTN, t('back'), 'wood', inside(BACK_BTN, mx, my));
   ctx.textAlign = 'left';
+}
+
+// nome em cima de cada base e o balão de emote (preso na borda da tela se a base estiver fora)
+function drawNames(ctx, g, ui, cam) {
+  ctx.textBaseline = 'top';
+  for (let s = 0; s < 2; s++) {
+    const b = g.sides[s].base, cx = b.x - cam, name = s === mine ? ui.nick : ui.rival;
+    if (cx > -60 && cx < W + 60) text(ctx, name, cx, baseTop[s] - 11, 8, s === mine ? '#fff4dc' : '#ffb59a', 'center', true, OUT);
+    const e = ui.emotes.find((x) => x.side === s);
+    if (!e) continue;
+    const pop = Math.min(1, (2.5 - e.t) / 0.15), x = Math.max(22, Math.min(W - 22, cx)), y = Math.max(HUD_H + 6, baseTop[s] - 46);
+    ctx.globalAlpha = Math.min(1, e.t / 0.3);
+    const sz = 30 * (0.6 + 0.4 * pop);
+    panel(ctx, x - 17, y, 34, 32, '#fff4dc', '#ffffff', '#c9b48e');
+    ctx.fillStyle = '#fff4dc'; ctx.fillRect(x - 3, y + 31, 6, 3); // biquinho do balão
+    icon(ctx, 'emo' + e.i, x, y + 16, sz);
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawPvpHud(ctx, g, ui, y) {
+  // plaquinha do rival: nome, era e XP, e o sinal da conexão
+  const foe = g.sides[1 - mine], next = XP_TO_EVOLVE[foe.era], frac = next ? Math.min(1, foe.xp / next) : 1;
+  ctx.font = font(8);
+  const label = `${ui.rival}  ·  ${nm(ERAS[foe.era])}`, w = Math.max(110, ctx.measureText(label).width + 14), x = W - 5 - w;
+  panel(ctx, x, y, w, 24, '#5a3820', '#83562f', '#3a2212');
+  text(ctx, label, x + w / 2, y + 2, 8, '#ffb59a', 'center', true, OUT);
+  hpBar(ctx, x + 6, y + 15, w - 12, frac, frac >= 1 ? '#ff9a7a' : '#d06a4a', 4);
+  const ping = ui.ping, c = ping == null ? '#9a8670' : ping < 120 ? '#5bd15b' : ping < 250 ? '#f2c14e' : '#ff5a4a';
+  ctx.fillStyle = OUT; ctx.fillRect(x - 13, y + 4, 8, 8);
+  ctx.fillStyle = c; ctx.fillRect(x - 12, y + 5, 6, 6);
+  if (ping != null) text(ctx, `${Math.round(ping)}ms`, x - 9, y + 13, 6.5, '#fff4dc', 'center', false, OUT);
+
+  // morte súbita: aviso antes e durante
+  const left = g.rules.sudden * 60 - g.time;
+  if (g.winner < 0 && g.sudden) {
+    ctx.globalAlpha = 0.65 + 0.35 * Math.sin(performance.now() / 120);
+    text(ctx, t('suddenNow'), W / 2, HUD_H + 4, 11, '#ff8a7a', 'center', true, OUT);
+    ctx.globalAlpha = 1;
+  } else if (g.winner < 0 && g.rules.sudden && left < 30) {
+    text(ctx, `${t('suddenIn')} ${Math.ceil(left)}s`, W / 2, HUD_H + 4, 9, '#ffe9a8', 'center', true, OUT);
+  }
+
+  // contagem de largada
+  if (g.countdown > 0) {
+    ctx.fillStyle = 'rgba(15,8,4,0.35)'; ctx.fillRect(0, HUD_H + 3, W, H);
+    text(ctx, String(Math.ceil(g.countdown)), W / 2, 92, 46, '#f8d878', 'center', true, OUT);
+    text(ctx, `${ui.nick}  vs  ${ui.rival}`, W / 2, 150, 12, '#fff4dc', 'center', true, OUT);
+    text(ctx, mine ? t('youRight') : t('youLeft'), W / 2, 168, 8, '#ffe9a8', 'center', false, OUT);
+    text(ctx, RULE_LABELS(g.rules).join('   ·   '), W / 2, 184, 7.5, '#e8d2ad', 'center', false, OUT);
+  } else if (g.time < 0.9 && g.winner < 0) {
+    ctx.globalAlpha = Math.min(1, (0.9 - g.time) / 0.3);
+    text(ctx, t('fight'), W / 2, 100 - g.time * 10, 34, '#ff9b3d', 'center', true, OUT);
+    ctx.globalAlpha = 1;
+  }
+
+  // botões de emote, embaixo no meio
+  if (g.winner < 0 && !ui.netEnd) {
+    EMO_BTNS.forEach((b, i) => {
+      const hover = inside(b, ui.mx, ui.my);
+      panel(ctx, b.x, b.y - (hover ? 1 : 0), b.w, b.h, hover ? '#83562f' : '#5a3820', '#9a6a3c', '#3a2212');
+      icon(ctx, 'emo' + i, b.x + b.w / 2, b.y + b.h / 2 - (hover ? 1 : 0), 18, ui.emoCd > 0 ? 0.45 : 1);
+    });
+    text(ctx, t('emoKeys'), W / 2, EMO_BTNS[0].y - 9, 6.5, '#f3e6cc', 'center', false, OUT);
+  }
+}
+
+// resumo do fim: os dois lado a lado, e revanche
+function drawPvpEnd(ctx, g, ui) {
+  const win = g.winner === mine, me = g.sides[mine], foe = g.sides[1 - mine];
+  board(ctx, win ? t('win') : t('lose'), win ? '#f8d878' : '#ff8a7a', 320, 170, (x, y, w) => {
+    const c1 = x + 196, c2 = x + 268;
+    text(ctx, `${fmt(g.time)}  ·  ${g.sudden ? t('bySudden') : t('onlineTag')}`, x + w / 2, y + 27, 7.5, '#e8d2ad', 'center', false, OUT);
+    text(ctx, ui.nick, c1, y + 38, 8, '#fff4dc', 'center', true, OUT, 68);
+    text(ctx, ui.rival, c2, y + 38, 8, '#ffb59a', 'center', true, OUT, 68);
+    const rows = [
+      ['kills', t('kills'), me.kills, foe.kills],
+      ['unit', t('statUnits'), me.tally.units, foe.tally.units],
+      ['turret', t('statTurrets'), me.tally.turrets, foe.tally.turrets],
+      ['special', t('statSpecials'), me.tally.specials, foe.tally.specials],
+      ['evolve', t('statEra'), nm(ERAS[me.era]), nm(ERAS[foe.era])],
+    ];
+    rows.forEach(([ico, label, a, b], i) => {
+      const ry = y + 51 + i * 15;
+      if (i % 2 === 0) { ctx.fillStyle = 'rgba(255,230,180,0.07)'; ctx.fillRect(x + 12, ry - 2, w - 24, 14); }
+      icon(ctx, ico, x + 22, ry + 5, 11);
+      text(ctx, label, x + 32, ry, 8, '#e8d2ad', 'left', false, OUT);
+      const better = typeof a === 'number' && a !== b ? (a > b ? 0 : 1) : -1;
+      text(ctx, String(a), c1, ry, 8.5, better === 0 ? '#f8d878' : '#fff4dc', 'center', true, OUT, 68);
+      text(ctx, String(b), c2, ry, 8.5, better === 1 ? '#f8d878' : '#fff4dc', 'center', true, OUT, 68);
+    });
+    const r = ui.rematch;
+    const msg = ui.oppGone ? t('oppGone') : r.them && !r.me ? `${ui.rival} ${t('wantsRematch')}` : r.me ? `${t('waitRematch')} ${ui.rival}...` : '';
+    if (msg) text(ctx, msg, x + w / 2, y + 128, 8, ui.oppGone ? '#ff8a7a' : '#a8f07a', 'center', true, OUT);
+    plank(ctx, REMATCH_BTN, t('rematch'), ui.oppGone ? 'off' : r.them || r.me ? 'go' : 'wood', !ui.oppGone && inside(REMATCH_BTN, ui.mx, ui.my));
+    plank(ctx, END_MENU_BTN, t('menuEnter'), 'wood', inside(END_MENU_BTN, ui.mx, ui.my));
+  });
 }

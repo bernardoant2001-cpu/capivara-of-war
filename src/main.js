@@ -1,8 +1,9 @@
-import { W, H, RES, WORLD, HUD_H, TURRET_W, TURRET_H, slotY } from './data.js';
+import { W, H, RES, WORLD, HUD_H, TURRET_W, TURRET_H, ERAS, slotY } from './data.js';
 import { newGame, update, train, buyTurret, buySlot, sellTurret, evolve, special } from './battle.js';
 import {
   draw, drawMenu, drawLangPick, drawAchievements, drawOnline, ready, effect, LANG_BTN, LANG_PICK, MODE_BTN, ACH_BTN, BACK_BTN, ONLINE_BTN, CODE_BOX,
   BUTTONS, SLOT_BTN, SELL_BTN, TOGGLE_BTN, SPECIAL_BTN, EVOLVE_BTN, MENU_BTNS,
+  NICK_BTN, RULE_BTNS, START_BTN, EMO_BTNS, REMATCH_BTN, END_MENU_BTN, SUDDEN,
 } from './render.js';
 import { createMatch } from './lockstep.js';
 import * as net from './net.js';
@@ -48,7 +49,8 @@ const ui = {
   mode: 'classic',
   screen: 'lang', // lang -> menu (ou conquistas, ou online) -> jogo
   me: 0, // lado de quem joga aqui; no online quem entra na sala é o 1
-  net: null, netEnd: null, waiting: false,
+  net: null, netEnd: null, waiting: false, nick: '', rival: '', ping: null,
+  emotes: [], emoCd: 0, rematch: { me: false, them: false }, oppGone: false, count: 0,
 };
 const keys = new Set();
 let mouseX = -1, mouseY = -1, dragX = null;
@@ -71,56 +73,137 @@ function start(diff) {
 }
 
 // ---------- online ----------
-let match = null, link = null, session = null, lastMsg = 0, stallT = 0;
+const NICK_KEY = 'capivara-of-war:apelido';
+let match = null, link = null, session = null, lastMsg = 0, stallT = 0, gen = 0;
 
-function openOnline() { ui.screen = 'online'; ui.net = { role: null, code: '', status: null, error: false, busy: false }; }
+// tudo que vem do outro lado passa por aqui antes de ser usado
+const cleanNick = (v) => String(v ?? '').replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 12) || '???';
+const cleanRules = (r) => ({
+  era: Math.max(0, Math.min(ERAS.length - 2, Math.floor(+r?.era) || 0)),
+  fast: r?.fast === true,
+  sudden: SUDDEN.includes(r?.sudden) ? r.sudden : 0,
+});
+const nickOk = (c) => c.length === 1 && /[\p{L}\p{N} _.-]/u.test(c);
+
+let savedNick = '';
+try { savedNick = localStorage.getItem(NICK_KEY) || ''; } catch {}
+ui.nick = savedNick ? cleanNick(savedNick) : `Capivara${Math.floor(Math.random() * 90 + 10)}`;
+const saveNick = () => { ui.nick = cleanNick(ui.nick); try { localStorage.setItem(NICK_KEY, ui.nick); } catch {} };
+
+function openOnline(status = null) {
+  ui.screen = 'online';
+  ui.net = { role: null, phase: 'room', code: '', status, error: !!status, busy: false, editing: null, rules: ui.net?.rules || cleanRules() };
+}
 function leaveOnline() {
   const l = link, s = session;
   match = link = session = null; // antes de fechar, pra queda da conexão não virar aviso
   l?.close(); s?.close();
-  Object.assign(ui, { me: 0, netEnd: null, waiting: false });
+  Object.assign(ui, { me: 0, netEnd: null, waiting: false, ping: null, emotes: [] });
 }
 
 // respostas do net.js; só valem enquanto a tela continua sendo a mesma tentativa
 const events = (n) => ({
   status: (k) => { if (ui.net === n) Object.assign(n, { status: k, error: false }); },
-  error: (k) => { if (ui.net === n && !match) Object.assign(n, { status: k, error: true, busy: false }); },
-  ready: (l) => (ui.net === n && !match ? connected(l, n.role) : l.close()),
+  error: (k) => { if (ui.net === n && !link) Object.assign(n, { status: k, error: true, busy: false }); },
+  ready: (l) => (ui.net === n && !link ? connected(l) : l.close()),
 });
 
 async function connect(n, fn) {
   session?.close();
   Object.assign(n, { status: 'loading', error: false, busy: true });
   const s = await fn(n.code, events(n));
-  if (ui.net === n && !match) session = s; else s?.close();
+  if (ui.net === n && !link) session = s; else s?.close();
 }
-const createRoom = () => { ui.net.role = 'host'; ui.net.code = net.newCode(); connect(ui.net, net.host); };
+const createRoom = () => { saveNick(); ui.net.editing = null; ui.net.role = 'host'; ui.net.code = net.newCode(); connect(ui.net, net.host); };
 const joinRoom = () => { if (ui.net.code.length === 4 && !ui.net.busy) connect(ui.net, net.join); };
+const pickJoin = () => { saveNick(); ui.net.editing = null; ui.net.role = 'join'; };
 
-function connected(l, role) {
+// os dois se acharam: vão pro saguão, trocam apelidos e o anfitrião manda as regras
+function connected(l) {
   link = l; session = null; // fechar o link fecha o peer junto
   lastMsg = performance.now();
+  Object.assign(ui.net, { phase: 'lobby', status: null, error: false, busy: false });
+  ui.rival = '...';
   l.onClose(() => netDown('oppLeft'));
-  l.onData((msg) => {
-    lastMsg = performance.now();
-    if (msg.hello) { if (!match) startOnline(msg.seed, 1); } else match?.receive(msg);
-  });
-  if (role === 'host') { // quem cria a sala sorteia a semente e joga com o Clã do Rio
-    const seed = (Math.random() * 2 ** 32) >>> 0;
-    l.send({ hello: 1, seed });
-    startOnline(seed, 0);
-  }
+  l.onData(onMsg);
+  l.send({ hi: ui.nick });
+  if (ui.net.role === 'host') l.send({ rules: ui.net.rules });
 }
 
-function startOnline(seed, me) {
-  match = createMatch(seed, me, (m) => link?.send(m));
+function onMsg(msg) {
+  if (!msg || typeof msg !== 'object') return;
+  lastMsg = performance.now();
+  if ('c' in msg) { if (match && msg.gen === gen && Array.isArray(msg.c)) match.receive(msg); return; } // de partida velha: ignora
+  if ('hi' in msg) ui.rival = cleanNick(msg.hi);
+  else if (msg.hello && ui.net.role === 'join') startOnline(msg.gen, msg.seed, msg.rules); // vem com as regras junto
+  else if (msg.rules && ui.net.role === 'join') ui.net.rules = cleanRules(msg.rules);
+  else if ('emo' in msg) showEmote(1 - ui.me, msg.emo);
+  else if (msg.ping) link?.send({ pong: msg.ping });
+  else if (msg.pong) ui.ping = performance.now() - msg.pong;
+  else if (msg.rematch) { ui.rematch.them = true; checkRematch(); }
+}
+
+// anfitrião começa: nova semente, e a mesma mensagem liga a partida nos dois
+function begin() {
+  if (ui.net.role !== 'host' || ui.net.phase !== 'lobby' || !link) return;
+  const seed = (Math.random() * 2 ** 32) >>> 0;
+  gen++;
+  link.send({ hello: 1, gen, seed, rules: ui.net.rules });
+  startOnline(gen, seed, ui.net.rules);
+}
+
+function startOnline(n, seed, rules) {
+  gen = n;
+  const me = ui.net.role === 'host' ? 0 : 1, r = cleanRules(rules);
+  ui.net.rules = r;
+  match = createMatch(seed >>> 0, me, (m) => link?.send({ ...m, gen: n }), r);
   g = match.g;
   stallT = 0;
-  Object.assign(ui, { cam: me ? WORLD - W : 0, me, paused: false, towers: false, selling: false, newRecord: false, saved: false, netEnd: null, waiting: false });
-  audio.play('evolve');
+  Object.assign(ui, {
+    cam: me ? WORLD - W : 0, me, paused: false, towers: false, selling: false, newRecord: false, saved: false,
+    netEnd: null, waiting: false, emotes: [], emoCd: 0, rematch: { me: false, them: false }, oppGone: false, count: 0,
+  });
 }
-const netDown = (key) => { if (match && g.winner < 0 && !ui.netEnd) ui.netEnd = key; };
+
+// queda: no meio da partida encerra, no fim só avisa, no saguão volta pra tela do online
+function netDown(key) {
+  if (!link) return;
+  if (match && g && g.winner < 0) { if (!ui.netEnd) ui.netEnd = key; return; }
+  if (match && g) { ui.oppGone = true; return; }
+  leaveOnline();
+  openOnline('friendLeft');
+}
 const backToMenu = () => { g = null; leaveOnline(); };
+
+// revanche: quando os dois pedem, voltam pro saguão (o anfitrião pode mudar as regras)
+function askRematch() {
+  if (ui.oppGone || ui.rematch.me) return;
+  ui.rematch.me = true;
+  link?.send({ rematch: 1 });
+  audio.play('click');
+  checkRematch();
+}
+function checkRematch() {
+  if (!ui.rematch.me || !ui.rematch.them) return;
+  match = null; g = null;
+  ui.screen = 'online';
+  Object.assign(ui.net, { phase: 'lobby', status: null, error: false });
+  Object.assign(ui, { netEnd: null, waiting: false, emotes: [] });
+}
+
+// emotes: não passam pelo lockstep (não mexem na partida), vão direto
+function showEmote(side, i) {
+  if (!Number.isInteger(i) || i < 0 || i > 5) return;
+  ui.emotes = ui.emotes.filter((e) => e.side !== side);
+  ui.emotes.push({ side, i, t: 2.5 });
+  audio.play('click');
+}
+function sendEmote(i) {
+  if (ui.emoCd > 0 || !link || g.winner >= 0 || ui.netEnd) return;
+  ui.emoCd = 1.2; // sem metralhar emote
+  link.send({ emo: i });
+  showEmote(ui.me, i);
+}
 
 // avança a partida online até onde os comandos do outro já chegaram
 function netFrame(dt) {
@@ -132,35 +215,83 @@ function netFrame(dt) {
   if (match.behind() > 2 && match.canStep()) match.step(); // ficou pra trás: alcança aos poucos
   match.flush();
   stallT = match.canStep() ? 0 : stallT + dt;
-  ui.waiting = stallT > 0.5;
+  ui.waiting = stallT > 0.5 && g.countdown <= 0;
+  // bipe a cada número da contagem e no LUTA
+  const c = g.countdown > 0 ? Math.ceil(g.countdown) : 0;
+  if (c !== ui.count) { audio.play(c ? 'click' : 'evolve'); ui.count = c; }
 }
-// aba escondida não roda quadros; continua avisando o outro que está vivo
-setInterval(() => match?.flush(), 1000);
+// a cada segundo: mede o atraso e, com a aba escondida (sem quadros), continua avisando que está vivo
+setInterval(() => {
+  if (!link) return;
+  link.send({ ping: performance.now() });
+  match?.flush();
+  if (!match && performance.now() - lastMsg > 10000) netDown('oppLeft');
+}, 1000);
+
+function cycleRule(i) {
+  const r = ui.net.rules;
+  if (ui.net.role !== 'host') return;
+  if (i === 0) r.era = (r.era + 1) % (ERAS.length - 1); // a era secreta não entra
+  else if (i === 1) r.fast = !r.fast;
+  else r.sudden = SUDDEN[(SUDDEN.indexOf(r.sudden) + 1) % SUDDEN.length];
+  link?.send({ rules: r });
+  audio.play('click');
+}
 
 function onlineKey(e) {
   const n = ui.net;
+  if (n.editing === 'nick') {
+    if (e.code === 'Enter' || e.code === 'Escape' || e.code === 'Tab') { n.editing = null; saveNick(); e.preventDefault(); }
+    else if (e.code === 'Backspace') ui.nick = ui.nick.slice(0, -1);
+    else if (nickOk(e.key) && ui.nick.length < 12) ui.nick += e.key;
+    return;
+  }
   if (e.code === 'Escape') return onlineBack();
-  if (!n.role) { if (e.code === 'Digit1') createRoom(); else if (e.code === 'Digit2') n.role = 'join'; return; }
-  if (n.role !== 'join' || n.busy) return;
+  if (!n.role) {
+    if (e.code === 'Digit1') createRoom();
+    else if (e.code === 'Digit2') pickJoin();
+    else if (e.code === 'Tab') { n.editing = 'nick'; e.preventDefault(); }
+    return;
+  }
+  if (n.role === 'host') {
+    const k = e.code.startsWith('Digit') ? +e.code.at(-1) - 1 : -1;
+    if (k >= 0 && k < 3) cycleRule(k);
+    else if (e.code === 'Enter') begin();
+    return;
+  }
+  if (n.phase === 'lobby' || n.busy) return;
   if (e.code === 'Enter') joinRoom();
   else if (e.code === 'Backspace') n.code = n.code.slice(0, -1);
   else if (e.key.length === 1 && net.validChar(e.key.toUpperCase()) && n.code.length < 4) n.code += e.key.toUpperCase();
 }
-function onlineClick(x, y) {
+function onlineClick(x, y, touch) {
   const n = ui.net;
   if (inside(BACK_BTN, x, y)) return onlineBack();
   if (!n.role) {
+    if (inside(NICK_BTN, x, y)) {
+      if (touch) { const v = prompt(t('nick'), ui.nick); if (v != null) { ui.nick = v; saveNick(); } } // celular não tem teclado na tela do jogo
+      else n.editing = n.editing ? null : 'nick';
+      return;
+    }
+    if (n.editing) { n.editing = null; saveNick(); }
     const k = LANG_PICK.findIndex((b) => inside(b, x, y));
-    if (k === 0) createRoom(); else if (k === 1) n.role = 'join';
-  } else if (n.role === 'join' && !n.busy && inside(CODE_BOX, x, y)) { // celular não tem teclado na tela do jogo
+    if (k === 0) createRoom(); else if (k === 1) pickJoin();
+    return;
+  }
+  if (n.role === 'host') {
+    const k = RULE_BTNS.findIndex((b) => inside(b, x, y));
+    if (k >= 0) cycleRule(k);
+    else if (inside(START_BTN, x, y)) begin();
+  } else if (n.phase !== 'lobby' && !n.busy && inside(CODE_BOX, x, y) && touch) {
     const code = (prompt(t('typeCode')) || '').toUpperCase().split('').filter(net.validChar).join('').slice(0, 4);
     if (code) { n.code = code; joinRoom(); }
   }
 }
 // voltar: da sala pra escolha de criar/entrar, da escolha pro menu
 function onlineBack() {
+  const had = ui.net.role;
   leaveOnline();
-  if (ui.net.role) openOnline(); else ui.screen = 'menu';
+  if (had) openOnline(); else ui.screen = 'menu';
 }
 
 // recorde = vitória mais rápida em cada dificuldade (clássico) ou onda mais longe (infinito)
@@ -222,7 +353,7 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
   if (!g && ui.screen === 'ach') { if (inside(BACK_BTN, x, y)) ui.screen = 'menu'; return; }
-  if (!g && ui.screen === 'online') return onlineClick(x, y);
+  if (!g && ui.screen === 'online') return onlineClick(x, y, e.pointerType === 'touch');
   if (!g) {
     const i = MENU_BTNS.findIndex((b) => inside(b, x, y));
     if (i >= 0) start(i);
@@ -232,7 +363,13 @@ canvas.addEventListener('pointerdown', (e) => {
     else if (inside(ONLINE_BTN, x, y)) openOnline();
     return;
   }
+  if (match && g.winner >= 0 && !ui.netEnd) { // resumo do online: revanche ou menu
+    if (inside(REMATCH_BTN, x, y)) askRematch();
+    else if (inside(END_MENU_BTN, x, y)) backToMenu();
+    return;
+  }
   if (g.winner >= 0 || ui.netEnd) return backToMenu();
+  if (match) { const k = EMO_BTNS.findIndex((b) => inside(b, x, y)); if (k >= 0) return sendEmote(k); }
   if (ui.paused) return;
   if (inside(TOGGLE_BTN, x, y)) return toggleTowers();
   if (inside(SPECIAL_BTN, x, y)) return act('special');
@@ -276,7 +413,12 @@ addEventListener('keydown', (e) => {
     else if (e.code === 'KeyO') openOnline();
     return;
   }
-  if (g.winner >= 0 || ui.netEnd) { if (e.code === 'Enter') backToMenu(); return; }
+  if (g.winner >= 0 || ui.netEnd) {
+    if (e.code === 'Enter') backToMenu();
+    else if (e.code === 'KeyR' && match && !ui.netEnd) askRematch();
+    return;
+  }
+  if (match && /^Digit[05-9]$/.test(e.code)) return sendEmote((+e.code.at(-1) + 5) % 10); // 5..9 -> 0..4, 0 -> 5
   if (!match && (e.code === 'KeyP' || (e.code === 'Escape' && !ui.selling))) { ui.paused = !ui.paused; return; } // online não pausa
   if (ui.paused) return;
   if (e.code === 'Space') { act('special'); e.preventDefault(); }
@@ -326,6 +468,9 @@ function frame(now) {
     }
   }
   for (const tt of ui.toasts) tt.t -= dt;
+  ui.emoCd -= dt;
+  for (const em of ui.emotes) em.t -= dt;
+  if (ui.emotes.some((em) => em.t <= 0)) ui.emotes = ui.emotes.filter((em) => em.t > 0);
   while (ui.toasts.length && ui.toasts[0].t <= 0) ui.toasts.shift();
   ui.cam = Math.max(0, Math.min(WORLD - W, ui.cam));
   frames++;

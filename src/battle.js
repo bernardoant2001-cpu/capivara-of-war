@@ -26,6 +26,7 @@ function makeSide(dir, mult) {
   const x = dir > 0 ? BASE_W / 2 : WORLD - BASE_W / 2, hp = ERAS[0].baseHp;
   return {
     dir, mult, era: 0, gold: START_GOLD, xp: 0, kills: 0,
+    tally: { units: 0, specials: 0, turrets: 0 }, // pro resumo do fim da partida
     units: [], queue: [], trainT: 0, slots: [null], specialT: SPECIAL_CD,
     base: { x, w: BASE_W, hp, maxHp: hp, hitT: 0 },
   };
@@ -33,16 +34,22 @@ function makeSide(dir, mult) {
 
 // sides[0] = jogador (anda pra direita), sides[1] = IA.
 // mode: 'classic' (derrubar a base inimiga), 'endless' (aguentar ondas; a base inimiga não cai) ou 'pvp' (dois jogadores)
-export function newGame(diff = 1, ai = true, mode = 'classic', seed = (Math.random() * 2 ** 32) >>> 0) {
-  return {
-    sides: [makeSide(1, 1), makeSide(-1, mode === 'pvp' ? 1 : DIFFICULTIES[diff].income)],
-    rand: rng(seed), tick: 0,
+// rules (online): era inicial, ritmo rápido (mais ouro e XP) e morte súbita (minutos até as bases começarem a ruir, 0 = nunca)
+export function newGame(diff = 1, ai = true, mode = 'classic', seed = (Math.random() * 2 ** 32) >>> 0, rules = {}) {
+  rules = { era: 0, fast: false, sudden: 0, ...rules };
+  const pace = rules.fast ? 1.6 : 1;
+  const g = {
+    sides: [makeSide(1, pace), makeSide(-1, mode === 'pvp' ? pace : DIFFICULTIES[diff].income)],
+    rand: rng(seed), tick: 0, rules, pace, countdown: 0, sudden: false,
     shots: [], drops: [], dying: [], fx: [], winner: -1, time: 0, diff, ai, aiT: 2, mode,
     // o que o jogador fez na partida (pras conquistas)
     stats: { specials: 0, turrets: 0, maxTurrets: 0, maxUnits: 0, suprema: 0 },
     // modo infinito
     wave: 0, waveT: 8, waveOn: false, pending: [], bannerT: 0, bannerDone: false, bonus: 0,
   };
+  for (let i = 0; i < rules.era; i++) { evolve(g, 0, true); evolve(g, 1, true); }
+  if (rules.era) { g.sides[0].gold = g.sides[1].gold = START_GOLD * 3 ** rules.era; g.fx.length = 0; }
+  return g;
 }
 
 // Distância da frente de `a` até a borda mais próxima de `b`, olhando na direção `dir`.
@@ -54,6 +61,7 @@ export function train(g, s, i) {
   side.gold -= def.cost;
   if (side.queue.length === 0) side.trainT = def.train;
   side.queue.push(def);
+  side.tally.units++;
   if (s === 0 && def.type === 3) g.stats.suprema++;
   return true;
 }
@@ -63,6 +71,7 @@ export function buyTurret(g, s, i) {
   if (g.winner >= 0 || !def || k < 0 || side.gold < def.cost) return false;
   side.gold -= def.cost;
   side.slots[k] = { def, cd: 0 };
+  side.tally.turrets++;
   if (s === 0) {
     g.stats.turrets++;
     g.stats.maxTurrets = Math.max(g.stats.maxTurrets, side.slots.filter(Boolean).length);
@@ -106,6 +115,7 @@ export function special(g, s) {
   const side = g.sides[s], sp = ERAS[side.era].special, foes = g.sides[1 - s].units;
   if (g.winner >= 0 || side.specialT > 0) return false;
   side.specialT = SPECIAL_CD;
+  side.tally.specials++;
   if (s === 0) g.stats.specials++;
   fx(g, 'special', 0, 0, side.dir);
   const lo = WORLD * 0.2, hi = WORLD - BASE_W;
@@ -163,12 +173,12 @@ function hurt(g, s, t, dmg) {
   if (t.def) {
     if (t.hp <= 0) {
       me.gold += t.def.cost * KILL_GOLD * me.mult;
-      me.xp += t.def.cost * KILL_XP;
+      me.xp += t.def.cost * KILL_XP * g.pace;
       me.kills++;
       fx(g, 'die', t.x, GROUND + t.z * DEPTH, me.dir);
     } else fx(g, 'hit', t.x, GROUND + t.z * DEPTH - t.def.h * 0.6, me.dir);
   } else {
-    me.xp += dmg * BASE_XP;
+    me.xp += dmg * BASE_XP * g.pace;
     fx(g, 'hit', t.x - me.dir * t.w / 2, GROUND - 25, me.dir);
     if (g.mode === 'endless' && s === 0) t.hp = t.maxHp; // no infinito a base inimiga não cai
     if (t.hp <= 0) g.winner = s;
@@ -274,10 +284,21 @@ function waves(g, dt) {
   fx(g, 'special', 0, 0, foe.dir);
 }
 
+// morte súbita: as duas bases perdem a mesma fração da vida, cada vez mais rápido; cai primeiro quem estava pior
+function suddenDeath(g, dt) {
+  const start = g.rules.sudden * 60;
+  if (!start || g.time < start) return;
+  g.sudden = true;
+  const k = 0.01 * (1 + (g.time - start) / 30) * dt, [a, b] = g.sides.map((side) => side.base);
+  a.hp -= a.maxHp * k; b.hp -= b.maxHp * k;
+  if (a.hp <= 0 || b.hp <= 0) g.winner = a.hp / a.maxHp >= b.hp / b.maxHp ? 0 : 1;
+}
+
 export function update(g, dt) {
   if (g.winner >= 0) return;
-  g.time += dt;
   g.tick++;
+  if (g.countdown > 0) { g.countdown -= dt; return; } // contagem do online: dá pra encher a fila, mas nada anda
+  g.time += dt;
   if (g.fx.length > 800) g.fx.length = 0; // ninguém consumindo os eventos (ex.: nos testes)
   if (g.mode === 'endless') waves(g, dt);
   else if (g.ai) ai(g, dt);
@@ -369,5 +390,6 @@ export function update(g, dt) {
   compact(g.dying, asleep);
   compact(g.sides[0].units, alive);
   compact(g.sides[1].units, alive);
+  suddenDeath(g, dt);
   if (g.sides[0].units.length > g.stats.maxUnits) g.stats.maxUnits = g.sides[0].units.length;
 }
