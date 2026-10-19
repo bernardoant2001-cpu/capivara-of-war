@@ -1,9 +1,9 @@
 import { W, H, RES, WORLD, HUD_H, TURRET_W, TURRET_H, ERAS, slotY } from './data.js';
-import { newGame, update, train, buyTurret, buySlot, sellTurret, evolve, special } from './battle.js';
+import { newGame, update, train, buyTurret, buySlot, sellTurret, evolve, special, why } from './battle.js';
 import {
   draw, drawMenu, drawLangPick, drawAchievements, drawOnline, ready, effect, LANG_BTN, LANG_PICK, MODE_BTN, ACH_BTN, BACK_BTN, ONLINE_BTN, CODE_BOX,
   BUTTONS, SLOT_BTN, SELL_BTN, TOGGLE_BTN, SPECIAL_BTN, EVOLVE_BTN, MENU_BTNS,
-  NICK_BTN, RULE_BTNS, START_BTN, EMO_BTNS, REMATCH_BTN, END_MENU_BTN, SUDDEN,
+  NICK_BTN, RULE_BTNS, START_BTN, EMO_BTNS, REMATCH_BTN, END_MENU_BTN, SUDDEN, PAUSE_BTN, SPEED_BTN, MINIMAP, pauseBtns, minimapToWorld,
 } from './render.js';
 import { createMatch } from './lockstep.js';
 import * as net from './net.js';
@@ -51,6 +51,7 @@ const ui = {
   me: 0, // lado de quem joga aqui; no online quem entra na sala é o 1
   net: null, netEnd: null, waiting: false, nick: '', rival: '', ping: null,
   emotes: [], emoCd: 0, rematch: { me: false, them: false }, oppGone: false, count: 0,
+  speed: 1, deny: null, pauseItems: [], camTo: null,
 };
 const keys = new Set();
 let mouseX = -1, mouseY = -1, dragX = null;
@@ -69,7 +70,7 @@ function start(diff) {
   g = newGame(diff, true, ui.mode);
   for (let i = 1; i < startEra; i++) { evolve(g, 0, true); evolve(g, 1, true); }
   g.sides[0].gold = g.sides[1].gold = startGold || 175 * 3 ** (startEra - 1);
-  Object.assign(ui, { cam: 0, me: 0, paused: false, towers: false, selling: false, newRecord: false, saved: false });
+  Object.assign(ui, { cam: 0, camTo: null, me: 0, paused: false, towers: false, selling: false, newRecord: false, saved: false, deny: null });
 }
 
 // ---------- online ----------
@@ -328,13 +329,25 @@ function achCheck() {
 const toggleMode = () => { ui.mode = ui.mode === 'classic' ? 'endless' : 'classic'; audio.play('click'); };
 
 const ACT = { train, turret: buyTurret, slot: buySlot, sell: sellTurret, evolve, special };
-// no online o clique vira comando pros dois computadores; sozinho vale na hora
-function act(name, arg) {
-  if (match) { match.act(name, arg); return true; }
-  return ACT[name](g, 0, arg);
+const BTN_OF = { special: SPECIAL_BTN, evolve: EVOLVE_BTN, slot: SLOT_BTN };
+// o aviso que aparece embaixo do botão quando não dá
+const DENY_TEXT = { gold: 'noGold', wait: 'recharging', xp: 'needXp' };
+const denyText = (name, r) => (r === 'full' ? (name === 'train' ? 'queueFull' : name === 'turret' ? 'noSlot' : 'slotsFull') : DENY_TEXT[r]);
+
+// no online o clique vira comando pros dois computadores; sozinho vale na hora.
+// Se não dá (sem ouro, fila cheia...), o botão balança e aparece o motivo.
+function act(name, arg, btn = BTN_OF[name]) {
+  const r = why(g, ui.me, name, arg);
+  if (r) {
+    if (btn && r !== 'none' && r !== 'over') { ui.deny = { b: btn, r, key: denyText(name, r), t: 0.35 }; audio.play('deny'); }
+    return false;
+  }
+  if (match) match.act(name, arg); else ACT[name](g, 0, arg);
+  return true;
 }
-const pick = (i) => { if (act(ui.towers ? 'turret' : 'train', i)) audio.play('click'); };
+const pick = (i) => { if (act(ui.towers ? 'turret' : 'train', i, BUTTONS[i])) audio.play('click'); };
 const toggleTowers = () => { ui.towers = !ui.towers; ui.selling = false; };
+const toggleSpeed = () => { ui.speed = ui.speed === 1 ? 2 : 1; audio.play('click'); };
 
 // vaga de torre do jogador embaixo do ponto (x,y da tela), ou -1
 function slotAt(x, y) {
@@ -344,16 +357,67 @@ function slotAt(x, y) {
   return -1;
 }
 
+// câmera: pular pra própria base ou pra linha de frente (desliza até lá)
+function camToBase() { ui.camTo = ui.me ? WORLD - W : 0; }
+function camToFront() {
+  const side = g.sides[ui.me], d = side.dir;
+  let x = side.base.x;
+  for (const u of side.units) if (d * (u.x - x) > 0) x = u.x;
+  ui.camTo = x - W / 2 + d * 80;
+}
+const camToMini = (x) => { ui.camTo = null; ui.cam = minimapToWorld(x) - W / 2; };
+
+// pausa: no online a partida não para, vira só um menu por cima
+function openPause() {
+  const full = document.fullscreenEnabled && !document.fullscreenElement && matchMedia('(pointer: coarse)').matches;
+  ui.pauseItems = [...(match ? ['resume'] : ['resume', 'restart']), 'sound', ...(full ? ['full'] : []), 'quit'];
+  ui.paused = true; ui.selling = false;
+}
+function pauseAction(k) {
+  audio.play('click');
+  if (k === 'resume') ui.paused = false;
+  else if (k === 'restart') { ui.mode = g.mode; start(g.diff); }
+  else if (k === 'sound') ui.muted = audio.toggleMute();
+  else if (k === 'full') { goFull(); ui.paused = false; }
+  else if (k === 'quit') leaveGame();
+}
+function leaveGame() {
+  if (match) return backToMenu();
+  if (!ui.saved) { ui.kills += g.sides[0].kills; achSave(); } // os abates contam pras conquistas mesmo saindo no meio
+  g = null;
+}
+
+// tela cheia e deitado, no celular (o navegador só deixa depois de um toque)
+let triedFull = false;
+function goFull() {
+  triedFull = true;
+  document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.('landscape')).catch(() => {});
+}
+
+// clique nos botões do painel; devolve true se pegou em algum
+function hudClick(x, y) {
+  if (inside(TOGGLE_BTN, x, y)) { toggleTowers(); return true; }
+  if (inside(SPECIAL_BTN, x, y)) { act('special'); return true; }
+  if (inside(EVOLVE_BTN, x, y)) { act('evolve'); return true; }
+  const i = BUTTONS.findIndex((b) => inside(b, x, y));
+  if (i >= 0) { pick(i); return true; }
+  if (ui.towers && inside(SLOT_BTN, x, y)) { if (act('slot')) audio.play('click'); return true; }
+  if (ui.towers && inside(SELL_BTN, x, y)) { ui.selling = !ui.selling; return true; }
+  return false;
+}
+
+let held = null, miniDrag = false; // dedo segurando um botão (mostra o balão); arrastando no minimapa
 canvas.addEventListener('pointerdown', (e) => {
   audio.init();
-  const [x, y] = toGame(e);
+  const [x, y] = toGame(e), touch = e.pointerType === 'touch';
+  if (touch && !triedFull) goFull();
   if (!g && ui.screen === 'lang') {
     const k = LANG_PICK.findIndex((b) => inside(b, x, y));
     if (k >= 0) { setLang(k ? 'en' : 'pt'); ui.screen = 'menu'; }
     return;
   }
   if (!g && ui.screen === 'ach') { if (inside(BACK_BTN, x, y)) ui.screen = 'menu'; return; }
-  if (!g && ui.screen === 'online') return onlineClick(x, y, e.pointerType === 'touch');
+  if (!g && ui.screen === 'online') return onlineClick(x, y, touch);
   if (!g) {
     const i = MENU_BTNS.findIndex((b) => inside(b, x, y));
     if (i >= 0) start(i);
@@ -369,31 +433,47 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
   if (g.winner >= 0 || ui.netEnd) return backToMenu();
+  if (ui.paused) {
+    const k = pauseBtns(ui.pauseItems.length).findIndex((b) => inside(b, x, y));
+    if (k >= 0) pauseAction(ui.pauseItems[k]);
+    return;
+  }
+  if (inside(PAUSE_BTN, x, y)) return openPause();
+  if (!match && inside(SPEED_BTN, x, y)) return toggleSpeed();
+  if (inside(MINIMAP, x, y)) { miniDrag = true; camToMini(x); canvas.setPointerCapture(e.pointerId); return; }
   if (match) { const k = EMO_BTNS.findIndex((b) => inside(b, x, y)); if (k >= 0) return sendEmote(k); }
-  if (ui.paused) return;
-  if (inside(TOGGLE_BTN, x, y)) return toggleTowers();
-  if (inside(SPECIAL_BTN, x, y)) return act('special');
-  if (inside(EVOLVE_BTN, x, y)) return act('evolve');
-  const i = BUTTONS.findIndex((b) => inside(b, x, y));
-  if (i >= 0) return pick(i);
-  if (ui.towers && inside(SLOT_BTN, x, y)) { if (act('slot')) audio.play('click'); return; }
-  if (ui.towers && inside(SELL_BTN, x, y)) { ui.selling = !ui.selling; return; }
+  if (touch && y < HUD_H) { // no celular: toque rápido usa o botão, segurar mostra o balão de informação
+    held = { x, y, t: performance.now() };
+    ui.mx = x; ui.my = y; ui.hover = BUTTONS.findIndex((b) => inside(b, x, y));
+    return;
+  }
+  if (hudClick(x, y)) return;
   if (ui.selling) {
     const k = slotAt(x, y);
     if (k >= 0) act('sell', k);
     ui.selling = false;
     return;
   }
-  if (y > HUD_H) { dragX = x; canvas.setPointerCapture(e.pointerId); }
+  if (y > HUD_H) { dragX = x; ui.camTo = null; canvas.setPointerCapture(e.pointerId); }
 });
 canvas.addEventListener('pointermove', (e) => {
   [mouseX, mouseY] = toGame(e);
+  if (held) return; // o balão fica parado no botão enquanto o dedo segura
   ui.mx = mouseX; ui.my = mouseY;
   ui.hover = BUTTONS.findIndex((b) => inside(b, mouseX, mouseY));
   ui.hoverMenu = MENU_BTNS.findIndex((b) => inside(b, mouseX, mouseY));
+  if (miniDrag) camToMini(mouseX);
   if (dragX !== null) { ui.cam -= mouseX - dragX; dragX = mouseX; }
 });
-canvas.addEventListener('pointerup', (e) => { dragX = null; if (e.pointerType !== 'mouse') mouseX = -1; });
+canvas.addEventListener('pointerup', (e) => {
+  dragX = null; miniDrag = false;
+  if (held) {
+    if (performance.now() - held.t < 350 && g && !ui.paused) hudClick(held.x, held.y);
+    held = null;
+    ui.mx = ui.my = -1; ui.hover = -1;
+  }
+  if (e.pointerType !== 'mouse') mouseX = -1;
+});
 canvas.addEventListener('pointerleave', () => { mouseX = ui.mx = -1; ui.hover = -1; ui.hoverMenu = -1; });
 
 addEventListener('keydown', (e) => {
@@ -418,29 +498,43 @@ addEventListener('keydown', (e) => {
     else if (e.code === 'KeyR' && match && !ui.netEnd) askRematch();
     return;
   }
+  if (ui.paused) {
+    if (e.code === 'Escape' || e.code === 'KeyP') pauseAction('resume');
+    else if (e.code === 'KeyR' && !match) pauseAction('restart');
+    else if (e.code === 'KeyQ') pauseAction('quit');
+    return;
+  }
+  if (e.code === 'KeyP' || (e.code === 'Escape' && !ui.selling)) return openPause();
   if (match && /^Digit[05-9]$/.test(e.code)) return sendEmote((+e.code.at(-1) + 5) % 10); // 5..9 -> 0..4, 0 -> 5
-  if (!match && (e.code === 'KeyP' || (e.code === 'Escape' && !ui.selling))) { ui.paused = !ui.paused; return; } // online não pausa
-  if (ui.paused) return;
   if (e.code === 'Space') { act('special'); e.preventDefault(); }
   else if (e.code === 'KeyE') act('evolve');
   else if (e.code === 'KeyT') toggleTowers();
+  else if (e.code === 'KeyF' && !match) toggleSpeed();
+  else if (e.code === 'KeyW' || e.code === 'ArrowUp') { camToFront(); e.preventDefault(); }
+  else if (e.code === 'KeyS' || e.code === 'ArrowDown') { camToBase(); e.preventDefault(); }
   else if (e.code === 'Escape') ui.selling = false;
   else if (ui.towers && n === 3) { if (act('slot')) audio.play('click'); }
   else if (n >= 0 && n < 4) pick(n);
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());
-document.addEventListener('visibilitychange', () => { if (document.hidden && g && !match && g.winner < 0) ui.paused = true; });
+document.addEventListener('visibilitychange', () => { if (document.hidden && g && !match && g.winner < 0 && !ui.paused) openPause(); });
 
 function moveCam(dt) {
   let v = 0;
   if (keys.has('ArrowLeft') || keys.has('KeyA')) v--;
   if (keys.has('ArrowRight') || keys.has('KeyD')) v++;
-  if (dragX === null && mouseX >= 0 && mouseY > HUD_H) {
+  if (dragX === null && !miniDrag && mouseX >= 0 && mouseY > HUD_H) {
     if (mouseX < 24) v--;
     else if (mouseX > W - 24) v++;
   }
+  if (v) ui.camTo = null; // mexeu na mão: cancela o pulo
   ui.cam += v * 400 * dt;
+  if (ui.camTo != null) {
+    const to = Math.max(0, Math.min(WORLD - W, ui.camTo));
+    ui.cam += (to - ui.cam) * Math.min(1, dt * 8);
+    if (Math.abs(to - ui.cam) < 0.5) ui.camTo = null;
+  }
 }
 
 // Lógica em passo fixo de 60 Hz, render a cada frame do monitor.
@@ -449,16 +543,16 @@ let acc = 0, last = performance.now(), frames = 0, fpsT = 0;
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.25);
   last = now;
-  if (g && !ui.paused) {
+  if (g && (!ui.paused || match)) { // no online o menu de pausa não para a partida
     moveCam(dt);
     if (match) netFrame(dt);
     else {
-      acc += dt;
+      acc += dt * ui.speed;
       while (acc >= STEP) { update(g, STEP); acc -= STEP; }
     }
     for (let i = 0; i < g.fx.length; i += 4) { // nome, x, y, direção
       const name = g.fx[i];
-      audio.play(name === 'tshoot' ? 'shoot' : name);
+      audio.play(name === 'tshoot' ? 'shoot' : name === 'gold' + ui.me ? 'coin' : name);
       effect(name, g.fx[i + 1], g.fx[i + 2], g.fx[i + 3]);
     }
     g.fx.length = 0;
@@ -469,13 +563,14 @@ function frame(now) {
   }
   for (const tt of ui.toasts) tt.t -= dt;
   ui.emoCd -= dt;
+  if (ui.deny && (ui.deny.t -= dt) <= 0) ui.deny = null;
   for (const em of ui.emotes) em.t -= dt;
   if (ui.emotes.some((em) => em.t <= 0)) ui.emotes = ui.emotes.filter((em) => em.t > 0);
   while (ui.toasts.length && ui.toasts[0].t <= 0) ui.toasts.shift();
   ui.cam = Math.max(0, Math.min(WORLD - W, ui.cam));
   frames++;
   if ((fpsT += dt) >= 1) { ui.fps = frames; frames = 0; fpsT -= 1; }
-  ui.dt = g && !ui.paused ? dt : 0;
+  ui.dt = g && (!ui.paused || match) ? dt : 0;
   if (g) draw(ctx, g, ui);
   else if (ui.screen === 'lang') drawLangPick(ctx, ui);
   else if (ui.screen === 'ach') drawAchievements(ctx, ui);

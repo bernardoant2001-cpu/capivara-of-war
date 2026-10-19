@@ -44,6 +44,7 @@ function build() {
   buffers.die = sweep(0.3, 520, 140, tri, 0.35);
   buffers.coin = notes(0.16, [988, 1319], sq, 0.12);
   buffers.click = sweep(0.05, 600, 900, sq, 0.12);
+  buffers.deny = notes(0.16, [196, 147], sq, 0.1);
   buffers.special = sweep(0.7, 180, 1400, tri, 0.3);
   buffers.evolve = notes(0.6, [523, 659, 784, 1047], sq, 0.16);
   buffers.win = notes(1.2, [523, 659, 784, 1047, 784, 1047], sq, 0.18);
@@ -67,7 +68,7 @@ export function init() {
 
 // no máximo 3 do mesmo som tocando junto, senão 10 estilingues estouram o volume
 export function play(name) {
-  if (!ac || muted || (playing[name] || 0) >= 3) return;
+  if (!ac || muted || !buffers[name] || (playing[name] || 0) >= 3) return; // evento sem som (ex.: moedinha do outro lado)
   const src = ac.createBufferSource();
   src.buffer = buffers[name];
   src.connect(sfxBus);

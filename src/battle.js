@@ -95,6 +95,23 @@ export function sellTurret(g, s, i) {
   return true;
 }
 
+// por que a ação não dá agora (null = dá). A interface usa pra avisar o jogador, no solo e no online.
+export function why(g, s, name, i) {
+  const side = g.sides[s], era = ERAS[side.era];
+  if (g.winner >= 0) return 'over';
+  if (name === 'train' || name === 'turret') {
+    const def = (name === 'train' ? era.units : era.turrets)[i];
+    if (!def) return 'none';
+    if (name === 'train' ? side.queue.length >= QUEUE_MAX : !side.slots.includes(null)) return 'full';
+    return side.gold < def.cost ? 'gold' : null;
+  }
+  if (name === 'slot') return side.slots.length >= MAX_SLOTS ? 'full' : side.gold < SLOT_COSTS[side.slots.length - 1] ? 'gold' : null;
+  if (name === 'special') return side.specialT > 0 ? 'wait' : null;
+  if (name === 'evolve') return side.era >= ERAS.length - 1 ? 'none' : canEvolve(side) ? null : 'xp';
+  if (name === 'sell') return side.slots[i] ? null : 'none';
+  return null;
+}
+
 export const canEvolve = (side) => side.era < ERAS.length - 1 && side.xp >= XP_TO_EVOLVE[side.era];
 
 // A IA evolui por tempo (force), o jogador por XP.
@@ -172,7 +189,9 @@ function hurt(g, s, t, dmg) {
   const me = g.sides[s];
   if (t.def) {
     if (t.hp <= 0) {
-      me.gold += t.def.cost * KILL_GOLD * me.mult;
+      const gold = t.def.cost * KILL_GOLD * me.mult;
+      me.gold += gold;
+      fx(g, s ? 'gold1' : 'gold0', t.x, GROUND + t.z * DEPTH - t.def.h, Math.round(gold)); // moedinha subindo
       me.xp += t.def.cost * KILL_XP * g.pace;
       me.kills++;
       fx(g, 'die', t.x, GROUND + t.z * DEPTH, me.dir);

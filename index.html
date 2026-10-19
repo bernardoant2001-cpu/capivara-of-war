@@ -8,10 +8,15 @@
     @font-face { font-family: "Jersey 10"; src: url("assets/fonts/jersey-10.woff2") format("woff2"); }
     html, body { margin: 0; height: 100%; background: #111; display: grid; place-items: center; overflow: hidden; }
     canvas { display: block; image-rendering: pixelated; touch-action: none; }
+    /* celular em pé: o jogo fica minúsculo, então pede pra deitar */
+    #girar { display: none; position: fixed; inset: 0; background: #1c0f07; color: #f8d878; font: 28px/1.3 "Jersey 10", monospace; text-align: center; place-items: center; padding: 24px; }
+    #girar b { display: block; font-size: 64px; transform: rotate(90deg); margin-bottom: 16px; }
+    @media (orientation: portrait) and (pointer: coarse) { #girar { display: grid; } }
   </style>
 </head>
 <body>
   <canvas id="game"></canvas>
+  <div id="girar"><div><b>&#9647;</b>Gire o celular<br>Rotate your phone</div></div>
   <script type="module" src="src/main.js"></script>
 </body>
 </html>

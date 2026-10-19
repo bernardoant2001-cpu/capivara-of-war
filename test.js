@@ -1,7 +1,7 @@
 // roda com: node test.js
 import assert from 'node:assert';
 import {
-  newGame, update, train, buyTurret, buySlot, sellTurret, evolve, special, canEvolve, waveUnits, ATTACK,
+  newGame, update, train, buyTurret, buySlot, sellTurret, evolve, special, canEvolve, waveUnits, why, ATTACK,
 } from './src/battle.js';
 import { ACHIEVEMENTS, check } from './src/achievements.js';
 import { createMatch, stateHash } from './src/lockstep.js';
@@ -249,6 +249,21 @@ for (const era of ERAS) {
   assert.ok(!A.desync && !B.desync, 'dessincronizou');
   if (A.g.tick === B.g.tick) assert.equal(stateHash(A.g), stateHash(B.g));
   assert.ok(A.g.sides[0].units.length + A.g.sides[1].units.length + A.g.sides[0].kills > 0, 'ninguém treinou nada');
+}
+
+// Motivo de não dar pra fazer a ação (aviso da interface) bate com o que a ação faz de verdade.
+{
+  const g = newGame(1, false);
+  g.sides[0].gold = 10;
+  assert.equal(why(g, 0, 'train', 0), 'gold'); assert.ok(!train(g, 0, 0));
+  g.sides[0].gold = 1e6;
+  for (let i = 0; i < 5; i++) assert.equal(why(g, 0, 'train', 0), null), train(g, 0, 0);
+  assert.equal(why(g, 0, 'train', 0), 'full'); assert.ok(!train(g, 0, 0));
+  assert.equal(why(g, 0, 'turret', 0), null); buyTurret(g, 0, 0);
+  assert.equal(why(g, 0, 'turret', 0), 'full');
+  assert.equal(why(g, 0, 'special'), 'wait'); g.sides[0].specialT = 0; assert.equal(why(g, 0, 'special'), null);
+  assert.equal(why(g, 0, 'evolve'), 'xp'); g.sides[0].xp = 1e9; assert.equal(why(g, 0, 'evolve'), null);
+  assert.equal(why(g, 0, 'train', 3), 'none');
 }
 
 // Regras do online: era inicial, ritmo rápido, contagem e morte súbita.

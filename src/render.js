@@ -102,6 +102,14 @@ export const EMO_BTNS = [0, 1, 2, 3, 4, 5].map((i) => ({ x: W / 2 - 75 + i * 25,
 export const REMATCH_BTN = { x: 178, y: 238, w: 136, h: 17 };
 export const END_MENU_BTN = { x: 326, y: 238, w: 136, h: 17 };
 export const SUDDEN = [0, 5, 10]; // opções de morte súbita, em minutos
+export const PAUSE_BTN = { x: 122, y: HUD_H + 3, w: 17, h: 17 };
+export const SPEED_BTN = { x: 141, y: HUD_H + 3, w: 21, h: 17 };
+export const MINIMAP = { x: 167, y: HUD_H + 4, w: 328, h: 15 };
+// botões do quadro de pausa (quantos forem): o quadro fica centralizado na tela
+export function pauseBtns(n) {
+  const y = Math.round((H - (74 + n * 21)) / 2);
+  return Array.from({ length: n }, (_, i) => ({ x: W / 2 - 80, y: y + 34 + i * 21, w: 160, h: 17 }));
+}
 
 // fundo: a imagem cobre o campo inteiro (WORLD), por frame é só 1 drawImage
 function drawBg(ctx, cam, era) {
@@ -124,9 +132,14 @@ export function draw(ctx, g, ui) {
   // alcance da torre com o mouse em cima do botão
   const hoverTurret = ui.towers && ERAS[g.sides[mine].era].turrets[ui.hover];
   if (hoverTurret) {
-    const side = g.sides[mine], b = side.base, fx = Math.round(b.x + side.dir * b.w / 2) - cam;
-    ctx.fillStyle = 'rgba(255,255,255,0.25)';
-    ctx.fillRect(side.dir > 0 ? fx : fx - hoverTurret.range, GROUND - 2, hoverTurret.range, 4);
+    const side = g.sides[mine], b = side.base, d = side.dir, fx = Math.round(b.x + d * b.w / 2) - cam, r = hoverTurret.range;
+    const x0 = d > 0 ? fx : fx - r;
+    ctx.fillStyle = 'rgba(255,236,150,0.32)'; ctx.fillRect(x0, GROUND - 4, r, 18);
+    ctx.fillStyle = 'rgba(255,236,150,0.7)'; ctx.fillRect(x0, GROUND - 4, r, 1); ctx.fillRect(x0, GROUND + 13, r, 1); // bordas da faixa
+    ctx.fillStyle = 'rgba(255,230,140,0.85)';
+    ctx.fillRect(fx + d * r - (d > 0 ? 1 : 0), GROUND - 12, 1, 28); // até onde a torre alcança
+    ctx.textBaseline = 'top';
+    text(ctx, `${t('range')} ${r}`, fx + d * (r - 3), GROUND - 22, 7, '#ffe9a8', d > 0 ? 'right' : 'left', false, OUT);
   }
 
   // desenha por profundidade: quem tá mais "pra frente" no chão fica por cima
@@ -153,6 +166,7 @@ export function draw(ctx, g, ui) {
   }
 
   drawParticles(ctx, dt, cam);
+  drawPops(ctx, dt, cam);
   ctx.setTransform(RES, 0, 0, RES, 0, 0);
   if (g.mode === 'pvp') drawNames(ctx, g, ui, cam);
   drawHud(ctx, g, ui);
@@ -362,10 +376,28 @@ export function effect(name, x, y, dir) {
     case 'special':
       shake = Math.max(shake, 1.5);
       break;
+    case 'gold0': case 'gold1': // ouro de abate: só mostra o que é seu
+      if (+name[4] === mine) { pops.push({ x, y, t: 0, str: '+' + dir }); if (pops.length > 40) pops.shift(); }
+      break;
     case 'evolve': // brilhos dourados subindo em volta da base
       for (let i = 0; i < 50; i++) emit(x + rnd(-40, 40), y + rnd(-45, 45), rnd(-10, 10), rnd(-45, -15), rnd(0.9, 1.6), rnd(1.5, 2.5), i % 2 ? '#fff3b0' : '#f2c14e', -10);
       break;
   }
+}
+
+const pops = [];
+function drawPops(ctx, dt, cam) {
+  ctx.textBaseline = 'top';
+  for (const p of pops) {
+    p.t += dt;
+    const k = Math.min(1, p.t / 0.9);
+    ctx.globalAlpha = 1 - k * k;
+    const y = p.y - 6 - k * 16;
+    icon(ctx, 'coin', p.x - cam - 5, y + 4, 7);
+    text(ctx, p.str, p.x - cam - 1, y, 7.5, '#f8d878', 'left', true, OUT);
+  }
+  ctx.globalAlpha = 1;
+  while (pops.length && pops[0].t >= 0.9) pops.shift();
 }
 
 function drawParticles(ctx, dt, cam) {
@@ -585,6 +617,15 @@ function drawHudBg(ctx) {
   ctx.drawImage(hudBg, 0, 0, W, HUD_H + 3);
 }
 
+// botão balança quando a ação não dá (ui.deny vem do main.js)
+const jig = (ui, b) => (ui.deny && ui.deny.b === b ? Math.sin(ui.deny.t * 70) * 2.5 * (ui.deny.t / 0.35) : 0);
+function shaken(ctx, ui, b, draw) {
+  const j = jig(ui, b);
+  if (j) { ctx.save(); ctx.translate(j, 0); }
+  draw();
+  if (j) ctx.restore();
+}
+
 function drawHud(ctx, g, ui) {
   const me = g.sides[mine], era = ERAS[me.era], mx = ui.mx, my = ui.my;
   ctx.textBaseline = 'top';
@@ -594,23 +635,24 @@ function drawHud(ctx, g, ui) {
     const free = me.slots.includes(null);
     era.turrets.forEach((def, i) => {
       const pay = me.gold >= def.cost;
-      card(ctx, BUTTONS[i], String(i + 1), def, free && pay, pay, inside(BUTTONS[i], mx, my));
+      shaken(ctx, ui, BUTTONS[i], () => card(ctx, BUTTONS[i], String(i + 1), def, free && pay, pay, inside(BUTTONS[i], mx, my)));
     });
     const full = me.slots.length >= MAX_SLOTS, cost = SLOT_COSTS[me.slots.length - 1];
-    plank(ctx, SLOT_BTN, full ? t('slotsFull') : `${t('slot')} ${cost}`, !full && me.gold >= cost ? 'go' : 'off', inside(SLOT_BTN, mx, my), 'slot');
+    shaken(ctx, ui, SLOT_BTN, () => plank(ctx, SLOT_BTN, full ? t('slotsFull') : `${t('slot')} ${cost}`, !full && me.gold >= cost ? 'go' : 'off', inside(SLOT_BTN, mx, my), 'slot'));
     plank(ctx, SELL_BTN, ui.selling ? t('sellPick') : t('sell'), ui.selling ? 'hot' : 'wood', inside(SELL_BTN, mx, my), 'sell');
   } else {
     era.units.forEach((def, i) => {
       const pay = me.gold >= def.cost;
-      card(ctx, BUTTONS[i], String(i + 1), def, pay && me.queue.length < QUEUE_MAX, pay, inside(BUTTONS[i], mx, my));
+      shaken(ctx, ui, BUTTONS[i], () => card(ctx, BUTTONS[i], String(i + 1), def, pay && me.queue.length < QUEUE_MAX, pay, inside(BUTTONS[i], mx, my)));
     });
   }
 
   // ouro e XP num buraco escavado no painel
   const R = RES_BOX;
-  inset(ctx, R.x, R.y, R.w, R.h);
+  const broke = ui.deny && ui.deny.r === 'gold' && Math.floor(ui.deny.t * 12) % 2 === 0; // pisca vermelho quando falta ouro
+  inset(ctx, R.x, R.y, R.w, R.h, broke ? '#5a1d14' : undefined);
   icon(ctx, 'coin', R.x + 9, R.y + 8, 12);
-  text(ctx, String(Math.floor(me.gold)), R.x + 17, R.y + 1, 11, '#f8d878', 'left', true, OUT);
+  text(ctx, String(Math.floor(me.gold)), R.x + 17, R.y + 1, 11, broke ? '#ff6a5a' : '#f8d878', 'left', true, OUT);
   const next = XP_TO_EVOLVE[me.era], frac = next ? Math.min(1, me.xp / next) : 1;
   icon(ctx, 'xp', R.x + 9, R.y + 21, 11);
   const bx = R.x + 17, bw = R.w - 21;
@@ -619,11 +661,11 @@ function drawHud(ctx, g, ui) {
   for (let k = 1; k < 10; k++) ctx.fillRect(bx + (bw * k) / 10, R.y + 18, P, 5); // marquinhas de 10%
 
   const ready = me.specialT <= 0, can = canEvolve(me);
-  action(ctx, SPECIAL_BTN, 'special', t('special'), ready ? t('spaceKey') : `${Math.ceil(me.specialT)}s`,
-    ready ? 'hot' : 'off', inside(SPECIAL_BTN, mx, my), ready ? 1 : 1 - me.specialT / SPECIAL_CD, ready);
+  shaken(ctx, ui, SPECIAL_BTN, () => action(ctx, SPECIAL_BTN, 'special', t('special'), ready ? t('spaceKey') : `${Math.ceil(me.specialT)}s`,
+    ready ? 'hot' : 'off', inside(SPECIAL_BTN, mx, my), ready ? 1 : 1 - me.specialT / SPECIAL_CD, ready));
   const hidden = me.era + 1 === SECRET_ERA; // do Futuro em diante ninguém sabe o que vem
-  action(ctx, EVOLVE_BTN, 'evolve', t('evolve'), !next ? t('maxEra') : can ? (hidden ? 'E: ???' : t('ready')) : hidden ? t('secret') : `${Math.floor(100 * frac)}%`,
-    can ? 'go' : 'off', inside(EVOLVE_BTN, mx, my), !next || can ? 1 : frac, can);
+  shaken(ctx, ui, EVOLVE_BTN, () => action(ctx, EVOLVE_BTN, 'evolve', t('evolve'), !next ? t('maxEra') : can ? (hidden ? 'E: ???' : t('ready')) : hidden ? t('secret') : `${Math.floor(100 * frac)}%`,
+    can ? 'go' : 'off', inside(EVOLVE_BTN, mx, my), !next || can ? 1 : frac, can));
   action(ctx, TOGGLE_BTN, ui.towers ? 'unit' : 'turret', ui.towers ? t('units') : t('turrets'), 'T', 'wood', inside(TOGGLE_BTN, mx, my), 1, false);
 
   // plaquinha pendurada embaixo do painel: fila de treino
@@ -642,6 +684,14 @@ function drawHud(ctx, g, ui) {
     }
   }
 
+  drawMinimap(ctx, g, ui);
+  smallBtn(ctx, PAUSE_BTN, inside(PAUSE_BTN, mx, my), () => {
+    ctx.fillStyle = OUT; ctx.fillRect(PAUSE_BTN.x + 4.5, PAUSE_BTN.y + 3.5, 8, 10);
+    ctx.fillStyle = '#fff4dc'; ctx.fillRect(PAUSE_BTN.x + 5, PAUSE_BTN.y + 4, 2.5, 9); ctx.fillRect(PAUSE_BTN.x + 9.5, PAUSE_BTN.y + 4, 2.5, 9);
+    ctx.fillStyle = OUT; ctx.fillRect(PAUSE_BTN.x + 7.5, PAUSE_BTN.y + 4, 2, 9);
+  });
+  if (g.mode !== 'pvp') smallBtn(ctx, SPEED_BTN, inside(SPEED_BTN, mx, my), () => text(ctx, `${ui.speed}x`, SPEED_BTN.x + SPEED_BTN.w / 2, SPEED_BTN.y + 3, 8.5, ui.speed > 1 ? '#f8d878' : '#fff4dc', 'center', true, OUT));
+
   // plaquinha da era e do tempo, no canto direito
   ctx.font = font(8);
   const label = g.mode === 'endless' ? `${t('wave')} ${g.wave}  ·  ${nm(era)}` : `${nm(era)}  ·  ${fmt(g.time)}`, lw = ctx.measureText(label).width + 12;
@@ -651,6 +701,8 @@ function drawHud(ctx, g, ui) {
   if (ui.muted) icon(ctx, 'mute', ex - 11, ey + 7, 13);
   if (ui.showFps) text(ctx, `${ui.fps} fps`, W - 6, ey + (g.mode === 'pvp' ? 44 : 18), 7, '#fff', 'right', false, OUT);
   if (g.mode === 'pvp') drawPvpHud(ctx, g, ui, ey + 17);
+  if (ui.deny && ui.deny.key) text(ctx, t(ui.deny.key), ui.deny.b.x + ui.deny.b.w / 2, HUD_H + 27, 8, '#ff8a7a', 'center', true, OUT);
+  if (!ui.paused && g.winner < 0 && !ui.netEnd) drawTip(ctx, g, ui, me, era);
   if (g.mode === 'endless' && !g.waveOn && g.winner < 0) {
     text(ctx, `${t('nextWave')} ${Math.max(0, Math.ceil(g.waveT))}s`, W - 6, ey + 18, 8, '#ffe9a8', 'right', false, OUT);
   }
@@ -685,12 +737,17 @@ function drawHud(ctx, g, ui) {
     board(ctx, t(ui.netEnd), '#ff8a7a', 270, 76, (x, y, w) => {
       text(ctx, t('backMenu'), x + w / 2, y + 46, 7.5, '#e8d2ad', 'center', false, OUT);
     });
+  } else if (ui.paused) {
+    const items = ui.pauseItems, btns = pauseBtns(items.length), h = 74 + items.length * 21, pvp = g.mode === 'pvp';
+    const label = { resume: t('resumeBtn'), restart: t('restart'), sound: ui.muted ? t('soundOff') : t('soundOn'), full: t('fullscreen'), quit: t('quit') };
+    board(ctx, pvp ? t('menuTitle') : t('paused'), '#fff4dc', 280, h, (x, y, w) => {
+      if (pvp) text(ctx, t('stillRunning'), x + w / 2, y + 24, 7, '#ffe9a8', 'center', false, OUT);
+      items.forEach((k, i) => plank(ctx, btns[i], label[k], k === 'resume' ? 'go' : k === 'quit' ? 'hot' : 'wood', inside(btns[i], mx, my)));
+      text(ctx, t('controls1'), x + w / 2, y + h - 31, 7, '#e8d2ad', 'center', false, OUT, w - 16);
+      text(ctx, t('controls2'), x + w / 2, y + h - 20, 7, '#e8d2ad', 'center', false, OUT, w - 16);
+    });
   } else if (ui.waiting) {
     text(ctx, t('waitOpp'), W / 2, 112, 11, '#fff4dc', 'center', true, OUT);
-  } else if (ui.paused) {
-    board(ctx, t('paused'), '#fff4dc', 220, 76, (x, y, w) => {
-      text(ctx, t('resume'), x + w / 2, y + 46, 8, '#e8d2ad', 'center', false, OUT);
-    });
   }
   drawToasts(ctx, ui);
   ctx.textAlign = 'left';
@@ -911,10 +968,10 @@ function drawPvpHud(ctx, g, ui, y) {
   const left = g.rules.sudden * 60 - g.time;
   if (g.winner < 0 && g.sudden) {
     ctx.globalAlpha = 0.65 + 0.35 * Math.sin(performance.now() / 120);
-    text(ctx, t('suddenNow'), W / 2, HUD_H + 4, 11, '#ff8a7a', 'center', true, OUT);
+    text(ctx, t('suddenNow'), W / 2, HUD_H + 22, 11, '#ff8a7a', 'center', true, OUT);
     ctx.globalAlpha = 1;
   } else if (g.winner < 0 && g.rules.sudden && left < 30) {
-    text(ctx, `${t('suddenIn')} ${Math.ceil(left)}s`, W / 2, HUD_H + 4, 9, '#ffe9a8', 'center', true, OUT);
+    text(ctx, `${t('suddenIn')} ${Math.ceil(left)}s`, W / 2, HUD_H + 22, 9, '#ffe9a8', 'center', true, OUT);
   }
 
   // contagem de largada
@@ -971,4 +1028,93 @@ function drawPvpEnd(ctx, g, ui) {
     plank(ctx, REMATCH_BTN, t('rematch'), ui.oppGone ? 'off' : r.them || r.me ? 'go' : 'wood', !ui.oppGone && inside(REMATCH_BTN, ui.mx, ui.my));
     plank(ctx, END_MENU_BTN, t('menuEnter'), 'wood', inside(END_MENU_BTN, ui.mx, ui.my));
   });
+}
+
+// ---------- ajudas da partida ----------
+
+function smallBtn(ctx, b, hover, inner) {
+  panel(ctx, b.x, b.y, b.w, b.h, hover ? '#83562f' : '#5a3820', '#9a6a3c', '#3a2212');
+  inner();
+}
+
+// o campo inteiro em miniatura: bases com a vida, cada unidade um pontinho e o pedaço que a câmera mostra
+function drawMinimap(ctx, g, ui) {
+  const M = MINIMAP, x0 = M.x + 9, w = M.w - 18, sx = (x) => x0 + (x / WORLD) * w;
+  inset(ctx, M.x, M.y, M.w, M.h, 'rgba(42,23,11,0.85)');
+  ctx.fillStyle = 'rgba(255,230,180,0.18)'; ctx.fillRect(x0, M.y + M.h - 4, w, P);
+  for (let s = 0; s < 2; s++) {
+    ctx.fillStyle = s ? '#7fb2f0' : '#ff9b3d';
+    for (const u of g.sides[s].units) ctx.fillRect(Math.round(sx(u.x) * RES) / RES - 1, M.y + M.h - (u.def.type >= 2 ? 9 : 7), 2, u.def.type >= 2 ? 5 : 3);
+    const b = g.sides[s].base, frac = Math.max(0, b.hp / b.maxHp), bx = s ? M.x + M.w - 8 : M.x + 3, bh = M.h - 6;
+    ctx.fillStyle = OUT; ctx.fillRect(bx - P, M.y + 3 - P, 5 + 2 * P, bh + 2 * P);
+    ctx.fillStyle = '#4a1d1d'; ctx.fillRect(bx, M.y + 3, 5, bh);
+    ctx.fillStyle = frac > 0.5 ? '#5bd15b' : frac > 0.25 ? '#e8c440' : '#e34b3b';
+    ctx.fillRect(bx, M.y + 3 + bh * (1 - frac), 5, bh * frac); // vida da base enchendo de baixo pra cima
+  }
+  ctx.strokeStyle = 'rgba(255,244,220,0.75)'; ctx.lineWidth = 2 * P;
+  ctx.strokeRect(sx(ui.cam), M.y + 2, (W / WORLD) * w, M.h - 4);
+}
+// quanto o x da tela no minimapa vale no campo (pro clique na miniatura)
+export const minimapToWorld = (x) => ((x - MINIMAP.x - 9) / (MINIMAP.w - 18)) * WORLD;
+
+// quebra o texto em linhas que cabem na largura
+function wrap(ctx, str, px, maxW) {
+  ctx.font = font(px);
+  const lines = [];
+  let line = '';
+  for (const word of str.split(' ')) {
+    const tryLine = line ? line + ' ' + word : word;
+    if (line && ctx.measureText(tryLine).width > maxW) { lines.push(line); line = word; } else line = tryLine;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+// balão de informação do botão embaixo do mouse (ou do dedo segurando)
+function drawTip(ctx, g, ui, me, era) {
+  const mx = ui.mx, my = ui.my;
+  if (mx < 0 || my > HUD_H) return;
+  let b = null, title = '', tag = '', tagColor = '#ffe9a8', stats = [], lines = [];
+  const i = BUTTONS.findIndex((x) => inside(x, mx, my));
+  const def = i >= 0 && (ui.towers ? era.turrets : era.units)[i];
+  if (def) {
+    b = BUTTONS[i]; title = nm(def);
+    if (ui.towers) {
+      tag = def.splash ? `${t('turret')} · ${t('area')}` : t('turret');
+      stats = [['kills', `${t('dmg')} ${def.dmg}`], ['time', `${t('every')} ${def.cd}s`], ['turret', `${t('range')} ${def.range}`]];
+    } else {
+      tag = def.type === 3 ? t('legendary') : def.splash ? t('area') : def.ranged ? t('ranged') : t('melee');
+      tagColor = def.type === 3 ? '#f8d878' : def.ranged ? '#9fd4ff' : '#ffb59a';
+      stats = [['base', `${t('hp')} ${def.hp}`], ['kills', `${t('dmg')} ${def.dmg} / ${def.cd}s`], ['time', `${t('trainTime')} ${def.train}s`]];
+      if (def.ranged) stats.push(['unit', `${t('range')} ${def.range}`]);
+    }
+  } else if (inside(SPECIAL_BTN, mx, my)) {
+    b = SPECIAL_BTN; title = nm(era.special);
+    lines = [t('tipSpecial').replace('{n}', era.special.count).replace('{d}', era.special.dmg)];
+  } else if (inside(EVOLVE_BTN, mx, my)) {
+    b = EVOLVE_BTN; title = t('evolve');
+    const next = XP_TO_EVOLVE[me.era];
+    if (!next || me.era >= ERAS.length - 1) lines = [t('maxEra')];
+    else {
+      lines = [t('tipEvolve').replace('{e}', me.era + 1 === SECRET_ERA ? '???' : nm(ERAS[me.era + 1]))];
+      lines.push(me.xp >= next ? t('ready') : t('tipXp').replace('{x}', Math.ceil(next - me.xp)));
+    }
+  } else if (ui.towers && inside(SLOT_BTN, mx, my)) { b = SLOT_BTN; title = t('slot'); lines = [t('tipSlot')]; }
+  else if (ui.towers && inside(SELL_BTN, mx, my)) { b = SELL_BTN; title = t('sell'); lines = [t('tipSell')]; }
+  if (!b) return;
+
+  const w = 158, pad = 6;
+  lines = lines.flatMap((l) => wrap(ctx, l, 7.5, w - pad * 2));
+  const rows = Math.ceil(stats.length / 2), h = 22 + rows * 13 + lines.length * 10 + 3;
+  const x = Math.max(4, Math.min(W - w - 4, b.x + b.w / 2 - w / 2)), y = HUD_H + 4;
+  panel(ctx, x, y, w, h, '#4a2c17', '#83562f', '#2a170b');
+  text(ctx, title, x + pad, y + 4, 9, '#fff4dc', 'left', true, OUT, w - 70);
+  if (tag) text(ctx, tag, x + w - pad, y + 5.5, 7, tagColor, 'right', true, OUT, 70);
+  ctx.fillStyle = 'rgba(255,230,180,0.18)'; ctx.fillRect(x + pad, y + 17, w - pad * 2, P);
+  stats.forEach(([ico, str], k) => {
+    const cx = x + pad + (k % 2) * ((w - pad * 2) / 2), cy = y + 21 + Math.floor(k / 2) * 13;
+    icon(ctx, ico, cx + 4, cy + 5, 9);
+    text(ctx, str, cx + 11, cy, 7.5, '#ffe9a8', 'left', false, OUT, (w - pad * 2) / 2 - 12);
+  });
+  lines.forEach((l, k) => text(ctx, l, x + pad, y + 21 + rows * 13 + k * 10, 7.5, '#ffe9a8', 'left', false, OUT));
 }

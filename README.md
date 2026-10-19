@@ -32,8 +32,10 @@ Atalhos pra testar: `?era=2` começa os dois lados na era 2, `?ouro=5000` começ
 - `T` alterna entre unidades e torres (no modo torres, `4` compra vaga)
 - `E` evolui de era quando a barra de XP enche
 - `Espaço` solta o especial
-- `←` `→` / `A` `D` / arrastar movem a câmera
+- `←` `→` / `A` `D` / arrastar movem a câmera; `↑`/`W` pula pra linha de frente, `↓`/`S` volta pra base; clicar no minimapa leva a câmera até lá
+- `F` alterna a velocidade 1x/2x (fora do online)
+- Passar o mouse (ou segurar o dedo) num botão mostra vida, dano, alcance e o que ele faz
 - `M` liga e desliga o som
 - No menu: `I` troca o modo, `C` abre as conquistas, `O` abre o online, `L` troca o idioma
-- `P` / `Esc` pausa (no online não tem pausa)
+- `P` / `Esc` abre a pausa: continuar, reiniciar, som e sair pro menu (no online abre o menu, mas a partida continua)
 - `F3` mostra o fps
