@@ -30,7 +30,9 @@ const uiAtlas = new Image();
 uiAtlas.src = 'assets/ui.png';
 let UI = {};
 const loadUi = Promise.all([fetch('assets/ui.json').then((r) => r.json()).then((f) => { UI = f; }), uiAtlas.decode()]);
-export const ready = Promise.all([document.fonts.load('8px "Jersey 10"'), loadUi, loadEra(0), loadEra(1)])
+const logoImg = new Image();
+logoImg.src = 'assets/logo.png';
+export const ready = Promise.all([document.fonts.load('8px "Jersey 10"'), loadUi, logoImg.decode(), loadEra(0), loadEra(1)])
   .then(() => { for (let k = 2; k < ERAS.length; k++) loadEra(k).catch(() => {}); });
 
 // a era com arte mais recente que não passa de `era` (as que ainda não têm arte usam a anterior)
@@ -717,10 +719,10 @@ function board(ctx, title, color, w, h, body) {
   body(x, y, w);
 }
 
-// logo do jogo em duas linhas, igual ao banner do itch
+// logo do jogo (assets/logo.png), com o topo em y
 function logo(ctx, cx, y) {
-  text(ctx, 'CAPIVARA', cx, y, 30, '#f8d878', 'center', true, '#3a1f0c');
-  text(ctx, 'OF WAR', cx, y + 36, 20, '#ff9b3d', 'center', true, '#3a1f0c');
+  const w = logoImg.width / RES, h = logoImg.height / RES;
+  ctx.drawImage(logoImg, Math.round((cx - w / 2) * RES) / RES, y, w, h);
 }
 
 // capivaras andando paradas no lugar, enfeitando as telas de menu
@@ -742,7 +744,7 @@ function menuBackdrop(ctx) {
 
 export function drawMenu(ctx, ui) {
   menuBackdrop(ctx);
-  logo(ctx, W / 2, 22);
+  logo(ctx, W / 2, 5);
   mascots(ctx);
   text(ctx, t('pick'), W / 2, 104, 9, '#f3e6cc', 'center', false, OUT);
   MENU_BTNS.forEach((b, i) => {
@@ -768,7 +770,7 @@ export function drawMenu(ctx, ui) {
 // primeira tela: escolher o idioma (sempre bilíngue)
 export function drawLangPick(ctx, ui) {
   menuBackdrop(ctx);
-  logo(ctx, W / 2, 30);
+  logo(ctx, W / 2, 14);
   mascots(ctx);
   text(ctx, 'Escolha o idioma  ·  Choose your language', W / 2, 116, 9, '#f3e6cc', 'center', false, OUT);
   LANG_PICK.forEach((b, i) => {
