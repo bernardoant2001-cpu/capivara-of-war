@@ -251,6 +251,14 @@ for (const era of ERAS) {
   assert.ok(A.g.sides[0].units.length + A.g.sides[1].units.length + A.g.sides[0].kills > 0, 'ninguém treinou nada');
 }
 
+// Online: comando inventado pelo outro lado é ignorado em vez de travar a partida.
+{
+  const m = createMatch(1, 0, () => {});
+  m.receive({ t: 30, c: [[10, 'constructor', 0], [10, 'toString'], [10, 'train', 'length'], [10, 'train', -1], [1e9, 'train', 0], 'lixo', null, [10, 'train', 0]], h: null });
+  for (let i = 0; i < 30; i++) m.step();
+  assert.equal(m.g.sides[1].queue.length + m.g.sides[1].units.length, 1, 'só o comando válido entra');
+}
+
 // Motivo de não dar pra fazer a ação (aviso da interface) bate com o que a ação faz de verdade.
 {
   const g = newGame(1, false);

@@ -1,6 +1,8 @@
 // Conexão direta entre os dois navegadores (WebRTC, via PeerJS).
 // A biblioteca só é baixada quando alguém abre o modo online; o resto do jogo não depende dela.
 const PEERJS = 'https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js';
+// impressão digital do arquivo: se a CDN entregar qualquer coisa diferente, o navegador recusa
+const PEERJS_SRI = 'sha512-iFU+yF1keEaLDC9HEwPfLMSRaS0unBHE14GEgx6pQKJXjp5v0tvX8xpfp2lgJ62XEjbYp/M5C3CAmej/PWXMyA==';
 const PREFIX = 'capivara-of-war-v1-';
 const LETTERS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // sem I, L, O, 0 e 1 pra não confundir
 
@@ -9,6 +11,8 @@ function loadPeer() {
   return (loading ||= new Promise((ok, fail) => {
     const s = document.createElement('script');
     s.src = PEERJS;
+    s.integrity = PEERJS_SRI;
+    s.crossOrigin = 'anonymous';
     s.onload = () => ok(window.Peer);
     s.onerror = () => { loading = null; fail(new Error('lib')); };
     document.head.appendChild(s);

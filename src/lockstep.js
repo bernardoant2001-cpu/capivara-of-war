@@ -66,8 +66,13 @@ export function createMatch(seed, me, send, rules) {
       outbox = []; hashOut = null;
     },
     receive(msg) {
-      for (const [t, a, x] of msg.c) add(t, [1 - me, a, x]);
-      if (msg.t > remoteUpTo) remoteUpTo = msg.t;
+      // o que vem do outro lado não é confiável: só ação conhecida, no futuro próximo, com argumento pequeno
+      for (const c of msg.c) {
+        const [t, a, x] = Array.isArray(c) ? c : [];
+        const argOk = x === undefined || x === null || (Number.isInteger(x) && x >= 0 && x < 4);
+        if (Object.hasOwn(ACTIONS, a) && Number.isInteger(t) && t >= g.tick && t <= g.tick + 600 && argOk) add(t, [1 - me, a, x]);
+      }
+      if (Number.isInteger(msg.t) && msg.t > remoteUpTo) remoteUpTo = msg.t;
       if (msg.h) { theirHashes.set(msg.h[0], msg.h[1]); compare(msg.h[0]); }
     },
     canStep: () => g.tick <= remoteUpTo,
